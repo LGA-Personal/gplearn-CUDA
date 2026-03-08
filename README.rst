@@ -1,11 +1,14 @@
+.. image:: https://github.com/LGA-Personal/gplearn-CUDA/actions/workflows/build.yml/badge.svg
+    :target: https://github.com/LGA-Personal/gplearn-CUDA/actions/workflows/build.yml
+    :alt: Build Status
 .. image:: https://img.shields.io/github/v/release/LGA-Personal/gplearn-CUDA.svg
     :target: https://github.com/LGA-Personal/gplearn-CUDA/releases
     :alt: Version
 .. image:: https://img.shields.io/github/license/LGA-Personal/gplearn-CUDA.svg
     :target: https://github.com/LGA-Personal/gplearn-CUDA/blob/main/LICENSE
     :alt: License
-.. image:: https://readthedocs.org/projects/gplearn-CUDA/badge/?version=stable
-    :target: http://gplearn-CUDA.readthedocs.io/
+.. image:: https://readthedocs.org/projects/gplearn-cuda/badge/?version=stable
+    :target: http://gplearn-cuda.readthedocs.io/
     :alt: Documentation Status
 
 |
