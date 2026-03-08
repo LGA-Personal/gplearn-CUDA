@@ -1,10 +1,10 @@
 [project]
-name = "gplearn"
+name = "gplearn-CUDA"
 dynamic = ["version"]
 authors = [
   { name="Trevor Stephens", email="trev.stephens@gmail.com" },
 ]
-description = "Genetic Programming in Python, with a scikit-learn inspired API"
+description = "GPU-accelerated Genetic Programming in Python (CUDA extension of gplearn)"
 readme = "README.rst"
 requires-python = ">=3.11"
 dependencies = [

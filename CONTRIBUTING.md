@@ -1,25 +1,25 @@
 Contributing
 ============
 
-``gplearn`` welcomes your contributions! Whether it is a bug report, bug fix,
+``gplearn-CUDA`` welcomes your contributions! Whether it is a bug report, bug fix,
 new feature or documentation enhancements, please help to improve the project!
 
 In general, please follow the
 [scikit-learn contribution guidelines](http://scikit-learn.org/stable/developers/contributing.html)
 for how to contribute to an open-source project.
 
-If you would like to open a bug report, please [open one here](https://github.com/trevorstephens/gplearn/issues).
+If you would like to open a bug report, please [open one here](https://github.com/LGA-Personal/gplearn-CUDA/issues).
 Please try to provide a [Short, Self Contained, Example](http://sscce.org/)
 so that the root cause can be pinned down and corrected more easily.
 
 If you would like to contribute a new feature or fix an existing bug, the basic
 workflow to follow (as detailed more at the scikit-learn link above) is:
 
-- [Open an issue](https://github.com/trevorstephens/gplearn/issues) with what
+- [Open an issue](https://github.com/LGA-Personal/gplearn-CUDA/issues) with what
   you would like to contribute to the project and its merits. Some features may
-  be out of scope for ``gplearn``, so be sure to get the go-ahead before
+  be out of scope for ``gplearn-CUDA``, so be sure to get the go-ahead before
   working on something that is outside of the project's goals.
-- Fork the ``gplearn`` repository, clone it locally, and create your new feature
+- Fork the ``gplearn-CUDA`` repository, clone it locally, and create your new feature
   branch.
 - Make your code changes on the branch, commit them, and push to your fork.
 - Open a pull request.
@@ -37,8 +37,8 @@ Please ensure that:
 - Any bug fix has regression tests.
 - Comply with [PEP8](https://pypi.python.org/pypi/pep8).
 
-Currently ``gplearn`` uses [GitHub workflows](https://github.com/trevorstephens/gplearn/actions/workflows/build.yml)
-for testing, [Coveralls](https://coveralls.io/github/trevorstephens/gplearn)
-for code coverage reports, and [Codacy](https://app.codacy.com/gh/trevorstephens/gplearn/dashboard)
+Currently ``gplearn-CUDA`` uses [GitHub workflows](https://github.com/LGA-Personal/gplearn-CUDA/actions/workflows/build.yml)
+for testing, [Coveralls](https://coveralls.io/github/LGA-Personal/gplearn-CUDA)
+for code coverage reports, and [Codacy](https://app.codacy.com/gh/LGA-Personal/gplearn-CUDA/dashboard)
 for code quality checks. These applications should automatically run on your
 new pull request to give you guidance on any problems in the new code.

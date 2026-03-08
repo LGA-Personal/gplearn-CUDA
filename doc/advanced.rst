@@ -10,7 +10,7 @@ Advanced Use
 GPU Acceleration Details
 ------------------------
 
-For large-scale symbolic regression tasks, ``gplearn`` provides a high-speed
+For large-scale symbolic regression tasks, ``gplearn-CUDA`` provides a high-speed
 GPU acceleration path using NVIDIA CUDA. This mode is particularly effective for
 datasets with more than 100,000 samples and large populations (>1,000).
 
@@ -49,7 +49,7 @@ Introspecting Programs
 ----------------------
 
 If you wish to learn more about how the evolution process came to the final
-solution, ``gplearn`` provides several means to examine the best programs and
+solution, ``gplearn-CUDA`` provides several means to examine the best programs and
 their parents. Most of these methods are illustrated
 :ref:`in the examples section <example>`.
 
@@ -202,7 +202,7 @@ reduce your run times depends a great deal upon the problem you are working on.
 
 Genetic programming is inherently an iterative process. One generation
 undergoes genetic operations with other members of the same generation in order
-to produce the next. When ran in parallel, gplearn splits the genetic
+to produce the next. When ran in parallel, gplearn-CUDA splits the genetic
 operations into equal-sized batches that run in parallel, but the generations
 themselves must be completed before the next step can begin. For example, with
 three threads and three generations the processing would look like this:
@@ -280,7 +280,7 @@ return a fourth value::
     def _logical(x1, x2, x3, x4):
         return np.where(x1 > x2, x3, x4)
 
-To make this into a ``gplearn`` compatible function, we use the factory where
+To make this into a ``gplearn-CUDA`` compatible function, we use the factory where
 we must give it a name for display purposes and declare the arity of the
 function which must match the number of arguments that your function expects::
 
@@ -288,14 +288,14 @@ function which must match the number of arguments that your function expects::
                             name='logical',
                             arity=4)
 
-Due to the way that the default Python pickler works, by default ``gplearn``
+Due to the way that the default Python pickler works, by default ``gplearn-CUDA``
 wraps your function to be serialised with cloudpickle. This can mean your
 evolution will run slightly more slowly. If you have no need to export your
 model after the run, or you are running single-threaded in an interactive
 Python session you may achieve a faster evolution time by setting the optional
 parameter ``wrap=False`` in :func:`functions.make_function()`.
 
-This can then be added to a ``gplearn`` estimator like so::
+This can then be added to a ``gplearn-CUDA`` estimator like so::
 
     gp = SymbolicTransformer(function_set=['add', 'sub', 'mul', 'div', logical])
 
@@ -372,7 +372,7 @@ when creating an estimator::
 
     est = SymbolicRegressor(metric=mape, verbose=1)
 
-As with custom functions, by default ``gplearn`` wraps your fitness metric to
+As with custom functions, by default ``gplearn-CUDA`` wraps your fitness metric to
 be serialised with cloudpickle. If you have no need to export your model after
 the run, or you are running single-threaded in an interactive Python session
 you may achieve a faster evolution time by setting the optional parameter

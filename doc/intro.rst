@@ -36,7 +36,7 @@ Introduction to GP
 
 .. currentmodule:: gplearn.genetic
 
-``gplearn`` extends the `scikit-learn <http://scikit-learn.org>`_ machine
+``gplearn-CUDA`` extends the `scikit-learn <http://scikit-learn.org>`_ machine
 learning library to perform Genetic Programming (GP) with symbolic regression.
 
 Symbolic regression is a machine learning technique that aims to identify an
@@ -68,14 +68,14 @@ Hardware Acceleration
 
 Genetic Programming is a "massively parallel" problem. Evaluating a population
 of thousands of programs across large datasets is computationally expensive.
-To address this, ``gplearn`` provides two modes of hardware acceleration:
+To address this, ``gplearn-CUDA`` provides two modes of hardware acceleration:
 
 1. **Multi-core CPU Parallelism**: By setting the ``n_jobs`` parameter, the
    evolution process can be distributed across all available CPU cores. This
    is effective for small to medium-sized datasets.
 
 2. **GPU/CUDA Acceleration**: For massive datasets (e.g., >100,000 samples)
-   and large populations, ``gplearn`` can offload program execution and
+   and large populations, ``gplearn-CUDA`` can offload program execution and
    fitness calculation to an NVIDIA GPU using CUDA. This mode utilizes a
    high-performance virtual machine (VM) interpreter on the GPU to achieve
    significant speedups.
@@ -157,12 +157,12 @@ This could then be evaluated recursively, starting from the left and holding
 onto a stack which keeps track of how much cumulative arity needs to be
 satisfied by the terminal nodes.
 
-Under the hood, ``gplearn``'s representation is similar to this, and uses Python
+Under the hood, ``gplearn-CUDA``'s representation is similar to this, and uses Python
 lists to store the functions and terminals. Constants are represented by
 floating point numbers, variables by integers and functions by a custom
 ``Function`` object.
 
-In ``gplearn``, the available function set is controlled by an argument that
+In ``gplearn-CUDA``, the available function set is controlled by an argument that
 is set when initializing an estimator. The default set is the arithmetic
 operators: addition, subtraction, division and multiplication. But you can also
 add in some transformers, comparison functions or trigonometric functions that
@@ -208,7 +208,7 @@ the same thing, and as with those other machine learning terms, in GP we have
 to know whether the metric needs to be maximized or minimized in order to be
 able to select the best program in a group.
 
-In ``gplearn``, several metrics are available by setting the ``metric``
+In ``gplearn-CUDA``, several metrics are available by setting the ``metric``
 parameter.
 
 For the :class:`SymbolicRegressor` several common error metrics are available
@@ -243,7 +243,7 @@ gp-compatible fitness function that can be used to evaluate your programs. See
 :ref:`advanced use here <custom_fitness>`.
 
 Evaluating the fitness of all the programs in a population is probably the most
-expensive part of GP. In ``gplearn``, you can parallelize this computation by
+expensive part of GP. In ``gplearn-CUDA``, you can parallelize this computation by
 using the ``n_jobs`` parameter to choose how many cores should work on it at
 once. If your dataset is small, the overhead of splitting the work over several
 cores is probably more than the benefit of the reduced work per core. This is
@@ -269,7 +269,7 @@ Functions like division must be modified to be able to accept any input
 argument and still return a valid number at evaluation so that
 nodes higher up the tree can successfully evaluate their output.
 
-In ``gplearn``, several protected functions are used:
+In ``gplearn-CUDA``, several protected functions are used:
 
     - division, if the denominator lies between -0.001 and 0.001, returns
       1.0.
@@ -386,7 +386,7 @@ Selection
 ---------
 
 Now that we have a population of programs, we need to decide which ones will
-get to evolve into the next generation. In ``gplearn`` this is done through
+get to evolve into the next generation. In ``gplearn-CUDA`` this is done through
 tournaments. From the population, a smaller subset is selected at random to
 compete, the size of which is controlled by the ``tournament_size`` parameter.
 The fittest individual in this subset is then selected to move on to the next
@@ -408,7 +408,7 @@ As discussed in the selection section, we use the fitness measure to find the
 fittest individual in the tournament to survive. But this individual does not
 just graduate unaltered to the next generation: first, genetic operations are
 performed on them. Several common genetic operations are supported by
-``gplearn``.
+``gplearn-CUDA``.
 
 **Crossover**
 
@@ -507,7 +507,7 @@ grow larger and larger with no significant improvement in fitness. This is
 known as bloat and leads to longer and longer computation times with little
 benefit to the solution.
 
-Bloat can be fought in ``gplearn`` in several ways. The principle weapon is
+Bloat can be fought in ``gplearn-CUDA`` in several ways. The principle weapon is
 using a penalized fitness measure during selection where the fitness of an
 individual is made worse the larger it is. In this way, should there be two
 programs with identical fitness competing in a tournament, the smaller program
@@ -525,7 +525,7 @@ depending on the relationship between program fitness and size in the
 population and will change from generation to generation.
 
 Another method to fight bloat is by using genetic operations that make programs
-smaller. ``gplearn`` provides hoist mutation which removes parts of programs
+smaller. ``gplearn-CUDA`` provides hoist mutation which removes parts of programs
 during evolution. It can be controlled by the  ``p_hoist_mutation`` parameter.
 
 Finally, you can increase the amount of subsampling performed on your data to
