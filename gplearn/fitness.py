@@ -14,6 +14,8 @@ import numpy as np
 from joblib import wrap_non_picklable_objects
 from scipy.stats import rankdata
 
+from .utils import get_xp
+
 __all__ = ['make_fitness']
 
 
@@ -103,15 +105,16 @@ def make_fitness(*, function, greater_is_better, wrap=True):
 
 def _weighted_pearson(y, y_pred, w):
     """Calculate the weighted Pearson correlation coefficient."""
-    with np.errstate(divide='ignore', invalid='ignore'):
-        y_pred_demean = y_pred - np.average(y_pred, weights=w)
-        y_demean = y - np.average(y, weights=w)
-        corr = ((np.sum(w * y_pred_demean * y_demean) / np.sum(w)) /
-                np.sqrt((np.sum(w * y_pred_demean ** 2) *
-                         np.sum(w * y_demean ** 2)) /
-                        (np.sum(w) ** 2)))
-    if np.isfinite(corr):
-        return np.abs(corr)
+    xp = get_xp(y)
+    with xp.errstate(divide='ignore', invalid='ignore'):
+        y_pred_demean = y_pred - xp.average(y_pred, weights=w)
+        y_demean = y - xp.average(y, weights=w)
+        corr = ((xp.sum(w * y_pred_demean * y_demean) / xp.sum(w)) /
+                xp.sqrt((xp.sum(w * y_pred_demean ** 2) *
+                         xp.sum(w * y_demean ** 2)) /
+                        (xp.sum(w) ** 2)))
+    if xp.isfinite(corr):
+        return float(xp.abs(corr))
     return 0.
 
 
@@ -124,26 +127,30 @@ def _weighted_spearman(y, y_pred, w):
 
 def _mean_absolute_error(y, y_pred, w):
     """Calculate the mean absolute error."""
-    return np.average(np.abs(y_pred - y), weights=w)
+    xp = get_xp(y)
+    return float(xp.average(xp.abs(y_pred - y), weights=w))
 
 
 def _mean_square_error(y, y_pred, w):
     """Calculate the mean square error."""
-    return np.average(((y_pred - y) ** 2), weights=w)
+    xp = get_xp(y)
+    return float(xp.average(((y_pred - y) ** 2), weights=w))
 
 
 def _root_mean_square_error(y, y_pred, w):
     """Calculate the root mean square error."""
-    return np.sqrt(np.average(((y_pred - y) ** 2), weights=w))
+    xp = get_xp(y)
+    return float(xp.sqrt(xp.average(((y_pred - y) ** 2), weights=w)))
 
 
 def _log_loss(y, y_pred, w):
     """Calculate the log loss."""
+    xp = get_xp(y)
     eps = 1e-15
-    inv_y_pred = np.clip(1 - y_pred, eps, 1 - eps)
-    y_pred = np.clip(y_pred, eps, 1 - eps)
-    score = y * np.log(y_pred) + (1 - y) * np.log(inv_y_pred)
-    return np.average(-score, weights=w)
+    inv_y_pred = xp.clip(1 - y_pred, eps, 1 - eps)
+    y_pred = xp.clip(y_pred, eps, 1 - eps)
+    score = y * xp.log(y_pred) + (1 - y) * xp.log(inv_y_pred)
+    return float(xp.average(-score, weights=w))
 
 
 weighted_pearson = _Fitness(function=_weighted_pearson,

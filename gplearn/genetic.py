@@ -29,7 +29,7 @@ from ._program import _Program
 from .fitness import _fitness_map, _Fitness
 from .functions import _function_map, _Function, sig1 as sigmoid
 from .utils import _partition_estimators
-from .utils import check_random_state
+from .utils import check_random_state, get_xp
 
 __all__ = ['SymbolicRegressor', 'SymbolicClassifier', 'SymbolicTransformer']
 
@@ -53,8 +53,11 @@ def _parallel_evolve(n_programs, parents, X, y, sample_weight, seeds, params):
     p_point_replace = params['p_point_replace']
     max_samples = params['max_samples']
     feature_names = params['feature_names']
+    device = params['device']
 
     max_samples = int(max_samples * n_samples)
+
+    xp = get_xp() if device == 'cuda' else np
 
     def _tournament():
         """Find the fittest individual from a sub-population."""
@@ -127,13 +130,14 @@ def _parallel_evolve(n_programs, parents, X, y, sample_weight, seeds, params):
                            parsimony_coefficient=parsimony_coefficient,
                            feature_names=feature_names,
                            random_state=random_state,
+                           device=device,
                            program=program)
 
         program.parents = genome
 
         # Draw samples, using sample weights, and then fit
         if sample_weight is None:
-            curr_sample_weight = np.ones((n_samples,))
+            curr_sample_weight = xp.ones((n_samples,))
         else:
             curr_sample_weight = sample_weight.copy()
         oob_sample_weight = curr_sample_weight.copy()
@@ -190,6 +194,7 @@ class BaseSymbolic(BaseEstimator, metaclass=ABCMeta):
                  feature_names=None,
                  warm_start=False,
                  low_memory=False,
+                 device='cpu',
                  n_jobs=1,
                  verbose=0,
                  random_state=None):
@@ -217,6 +222,7 @@ class BaseSymbolic(BaseEstimator, metaclass=ABCMeta):
         self.feature_names = feature_names
         self.warm_start = warm_start
         self.low_memory = low_memory
+        self.device = device
         self.n_jobs = n_jobs
         self.verbose = verbose
         self.random_state = random_state
@@ -438,6 +444,14 @@ class BaseSymbolic(BaseEstimator, metaclass=ABCMeta):
         params['function_set'] = self._function_set
         params['arities'] = self._arities
         params['method_probs'] = self._method_probs
+        params['device'] = self.device
+
+        if self.device == 'cuda':
+            import cupy as cp
+            X = cp.asarray(X, dtype=cp.float32)
+            y = cp.asarray(y, dtype=cp.float32)
+            if sample_weight is not None:
+                sample_weight = cp.asarray(sample_weight, dtype=cp.float32)
 
         if not self.warm_start or not hasattr(self, '_programs'):
             # Free allocated memory, if any
@@ -820,6 +834,7 @@ class SymbolicRegressor(RegressorMixin, BaseSymbolic):
                  feature_names=None,
                  warm_start=False,
                  low_memory=False,
+                 device='cpu',
                  n_jobs=1,
                  verbose=0,
                  random_state=None):
@@ -843,6 +858,7 @@ class SymbolicRegressor(RegressorMixin, BaseSymbolic):
             feature_names=feature_names,
             warm_start=warm_start,
             low_memory=low_memory,
+            device=device,
             n_jobs=n_jobs,
             verbose=verbose,
             random_state=random_state)
@@ -1111,6 +1127,7 @@ class SymbolicClassifier(ClassifierMixin, BaseSymbolic):
                  feature_names=None,
                  warm_start=False,
                  low_memory=False,
+                 device='cpu',
                  n_jobs=1,
                  verbose=0,
                  random_state=None):
@@ -1136,6 +1153,7 @@ class SymbolicClassifier(ClassifierMixin, BaseSymbolic):
             feature_names=feature_names,
             warm_start=warm_start,
             low_memory=low_memory,
+            device=device,
             n_jobs=n_jobs,
             verbose=verbose,
             random_state=random_state)
@@ -1426,6 +1444,7 @@ class SymbolicTransformer(TransformerMixin, BaseSymbolic):
                  feature_names=None,
                  warm_start=False,
                  low_memory=False,
+                 device='cpu',
                  n_jobs=1,
                  verbose=0,
                  random_state=None):
@@ -1451,6 +1470,7 @@ class SymbolicTransformer(TransformerMixin, BaseSymbolic):
             feature_names=feature_names,
             warm_start=warm_start,
             low_memory=low_memory,
+            device=device,
             n_jobs=n_jobs,
             verbose=verbose,
             random_state=random_state)

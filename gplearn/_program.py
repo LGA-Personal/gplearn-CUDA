@@ -15,7 +15,7 @@ import numpy as np
 from sklearn.utils.random import sample_without_replacement
 
 from .functions import _Function
-from .utils import check_random_state
+from .utils import check_random_state, get_xp
 
 
 class _Program(object):
@@ -86,6 +86,9 @@ class _Program(object):
         the `print` operation or `export_graphviz`. If None, then X0, X1, etc
         will be used for representations.
 
+    device : str, optional (default='cpu')
+        The device on which to perform the evolution.
+
     program : list, optional (default=None)
         The flattened tree representation of the program. If None, a new naive
         random tree will be grown. If provided, it will be validated.
@@ -133,6 +136,7 @@ class _Program(object):
                  random_state,
                  transformer=None,
                  feature_names=None,
+                 device='cpu',
                  program=None):
 
         self.function_set = function_set
@@ -146,6 +150,9 @@ class _Program(object):
         self.parsimony_coefficient = parsimony_coefficient
         self.transformer = transformer
         self.feature_names = feature_names
+        self.device = device
+        self._xp = get_xp() if device == 'cuda' else np
+        self._cuda_kernel = None
         self.program = program
 
         if self.program is not None:
@@ -339,6 +346,76 @@ class _Program(object):
         """Calculates the number of functions and terminals in the program."""
         return len(self.program)
 
+    _CUDA_HEADER = """
+    extern "C" {
+        __device__ inline float protected_div(float x, float y) {
+            return (fabsf(y) > 0.001f) ? (x / y) : 1.0f;
+        }
+        __device__ inline float protected_sqrt(float x) {
+            return sqrtf(fabsf(x));
+        }
+        __device__ inline float protected_log(float x) {
+            return (fabsf(x) > 0.001f) ? logf(fabsf(x)) : 0.0f;
+        }
+        __device__ inline float protected_inv(float x) {
+            return (fabsf(x) > 0.001f) ? (1.0f / x) : 0.0f;
+        }
+        __device__ inline float sigmoid(float x) {
+            return 1.0f / (1.0f + expf(-x));
+        }
+
+        __global__ void evaluate_program(const float* X, float* y_pred, int n_samples, int n_features) {
+            int tid = blockDim.x * blockIdx.x + threadIdx.x;
+            if (tid < n_samples) {
+                y_pred[tid] = %s;
+            }
+        }
+    }
+    """
+
+    def _compile_cuda_kernel(self):
+        """Translate the prefix program to C++ and JIT-compile a CUDA kernel."""
+        import cupy as cp
+
+        # Mapping of gplearn functions to C++ device functions
+        cpp_map = {
+            'add': '(%s + %s)',
+            'sub': '(%s - %s)',
+            'mul': '(%s * %s)',
+            'div': 'protected_div(%s, %s)',
+            'sqrt': 'protected_sqrt(%s)',
+            'log': 'protected_log(%s)',
+            'abs': 'fabsf(%s)',
+            'neg': '-(%s)',
+            'inv': 'protected_inv(%s)',
+            'max': 'fmaxf(%s, %s)',
+            'min': 'fminf(%s, %s)',
+            'sin': 'sinf(%s)',
+            'cos': 'cosf(%s)',
+            'tan': 'tanf(%s)',
+            'sig': 'sigmoid(%s)'
+        }
+
+        # Translate prefix notation to C++ expression string
+        expr_stack = []
+        for node in reversed(self.program):
+            if isinstance(node, _Function):
+                args = [expr_stack.pop() for _ in range(node.arity)]
+                expr_stack.append(cpp_map[node.name] % tuple(args))
+            elif isinstance(node, int):
+                # Variable access
+                expr_stack.append('X[tid * n_features + %d]' % node)
+            else:
+                # Constant literal
+                expr_stack.append('%ff' % node)
+
+        cpp_expr = expr_stack[0]
+        full_source = self._CUDA_HEADER % cpp_expr
+
+        # JIT-compile using CuPy
+        module = cp.RawModule(code=full_source, options=('--std=c++11',))
+        self._cuda_kernel = module.get_function('evaluate_program')
+
     def execute(self, X):
         """Execute the program according to X.
 
@@ -354,6 +431,22 @@ class _Program(object):
             The result of executing the program on X.
 
         """
+        if self.device == 'cuda':
+            import cupy as cp
+            X = cp.asarray(X, dtype=cp.float32)
+            n_samples, n_features = X.shape
+            y_hats = cp.empty(n_samples, dtype=cp.float32)
+
+            if self._cuda_kernel is None:
+                self._compile_cuda_kernel()
+
+            # Grid-stride loop configuration
+            threads_per_block = 256
+            blocks_per_grid = (n_samples + threads_per_block - 1) // threads_per_block
+            self._cuda_kernel((blocks_per_grid,), (threads_per_block,),
+                              (X, y_hats, n_samples, n_features))
+            return y_hats
+
         # Check for single-node programs
         node = self.program[0]
         if isinstance(node, float):

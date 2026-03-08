@@ -9,7 +9,36 @@ order to maintain compatibility across different versions of scikit-learn.
 import numbers
 
 import numpy as np
+try:
+    import cupy as cp
+    HAS_CUPY = True
+except ImportError:
+    HAS_CUPY = False
 from joblib import cpu_count
+
+
+def get_xp(x=None):
+    """Return the array module for x, or CuPy if available and no x is given.
+
+    Parameters
+    ----------
+    x : array-like, optional (default=None)
+        The array-like object to check. If None, returns the cupy module if
+        available, otherwise returns the numpy module.
+
+    Returns
+    -------
+    xp : module
+        The array module (numpy or cupy).
+
+    """
+    if x is not None:
+        if HAS_CUPY:
+            return cp.get_array_module(x)
+        return np
+    if HAS_CUPY:
+        return cp
+    return np
 
 
 def check_random_state(seed):

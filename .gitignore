@@ -13,6 +13,8 @@ __pycache__/
 # Distribution / packaging
 .Python
 env/
+.venv/
+uv.lock
 build/
 develop-eggs/
 dist/
@@ -32,7 +34,7 @@ setup.cfg
 .vscode/
 
 # PyInstaller
-#  Usually these files are written by a python script from a template
+#  Usually these files are written by a python script from a terminal
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
@@ -46,6 +48,10 @@ htmlcov/
 .tox/
 .coverage*
 .cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cupy/
 nosetests.xml
 coverage.xml
 /.idea/
@@ -64,3 +70,7 @@ doc/_build/
 
 # PyBuilder
 target/
+
+# Verification and benchmarking
+verify_gpu.py
+benchmark_gpu.py
