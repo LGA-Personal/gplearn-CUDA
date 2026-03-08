@@ -70,3 +70,7 @@ doc/_build/
 
 # PyBuilder
 target/
+
+# Local project files
+GEMINI.md
+GPU_ACCELERATION_PLAN.md
