@@ -46,5 +46,8 @@ tracker = "https://github.com/LGA-Personal/gplearn-CUDA/issues"
 requires = ["hatchling >= 1.26"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build.targets.wheel]
+packages = ["gplearn"]
+
 [tool.hatch.version]
 path = "gplearn/__init__.py"
