@@ -880,6 +880,12 @@ class SymbolicRegressor(RegressorMixin, BaseSymbolic):
         information is discarded. For very large populations or runs with many
         generations, this can result in substantial memory use reduction.
 
+    device : str, optional (default='cpu')
+        The hardware device to use for execution and fitness calculation.
+        - 'cpu' : Standard multi-core CPU execution using NumPy.
+        - 'cuda' : GPU-accelerated execution using NVIDIA CUDA and CuPy. This
+          mode is significantly faster for large datasets and populations.
+
     n_jobs : integer, optional (default=1)
         The number of jobs to run in parallel for `fit`. If -1, then the number
         of jobs is set to the number of cores.
@@ -1172,6 +1178,12 @@ class SymbolicClassifier(ClassifierMixin, BaseSymbolic):
         When set to ``True``, only the current generation is retained. Parent
         information is discarded. For very large populations or runs with many
         generations, this can result in substantial memory use reduction.
+
+    device : str, optional (default='cpu')
+        The hardware device to use for execution and fitness calculation.
+        - 'cpu' : Standard multi-core CPU execution using NumPy.
+        - 'cuda' : GPU-accelerated execution using NVIDIA CUDA and CuPy. This
+          mode is significantly faster for large datasets and populations.
 
     n_jobs : integer, optional (default=1)
         The number of jobs to run in parallel for `fit`. If -1, then the number
@@ -1492,6 +1504,12 @@ class SymbolicTransformer(TransformerMixin, BaseSymbolic):
         When set to ``True``, only the current generation is retained. Parent
         information is discarded. For very large populations or runs with many
         generations, this can result in substantial memory use reduction.
+
+    device : str, optional (default='cpu')
+        The hardware device to use for execution and fitness calculation.
+        - 'cpu' : Standard multi-core CPU execution using NumPy.
+        - 'cuda' : GPU-accelerated execution using NVIDIA CUDA and CuPy. This
+          mode is significantly faster for large datasets and populations.
 
     n_jobs : integer, optional (default=1)
         The number of jobs to run in parallel for `fit`. If -1, then the number

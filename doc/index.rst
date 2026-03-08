@@ -78,6 +78,7 @@ Contents:
    intro
    examples
    reference
+   cuda_architecture
    advanced
    installation
    contributing

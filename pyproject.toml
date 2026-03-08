@@ -51,3 +51,11 @@ packages = ["gplearn"]
 
 [tool.hatch.version]
 path = "gplearn/__init__.py"
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E203", "E501"]
