@@ -3,8 +3,8 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to gplearn's documentation!
-===================================
+Welcome to gplearn-CUDA's documentation!
+======================================
 
 |
 
@@ -27,14 +27,12 @@ Welcome to gplearn's documentation!
 
 .. currentmodule:: gplearn.genetic
 
-``gplearn`` implements Genetic Programming in Python, with a
-`scikit-learn <http://scikit-learn.org>`_ inspired and compatible API.
+``gplearn-CUDA`` implements GPU-accelerated Genetic Programming in Python, with 
+a `scikit-learn <http://scikit-learn.org>`_ inspired and compatible API.
 
-While Genetic Programming (GP) can be used to perform a
-`very wide variety of tasks <http://www.genetic-programming.org/combined.php>`_,
-``gplearn`` is purposefully constrained to solving symbolic regression
-problems. This is motivated by the scikit-learn ethos, of having powerful
-estimators that are straight-forward to implement.
+**This project is a high-performance extension of the original** `gplearn <https://github.com/trevorstephens/gplearn>`_ 
+**library developed by Trevor Stephens.** It maintains all the original 
+functionality while introducing massive parallelization via NVIDIA CUDA.
 
 Symbolic regression is a machine learning technique that aims to identify an
 underlying mathematical expression that best describes a relationship. It
@@ -44,10 +42,10 @@ targets in order to predict new data. Each successive generation of programs is
 then evolved from the one that came before it by selecting the fittest
 individuals from the population to undergo genetic operations.
 
-``gplearn`` retains the familiar scikit-learn ``fit``/``predict`` API and
+``gplearn-CUDA`` retains the familiar scikit-learn ``fit``/``predict`` API and
 works with the existing scikit-learn `pipeline <https://scikit-learn.org/stable/modules/compose.html>`_
 and `grid search <http://scikit-learn.org/stable/modules/grid_search.html>`_
-modules. You can get started with ``gplearn`` as simply as::
+modules. You can get started with ``gplearn-CUDA`` as simply as::
 
     est = SymbolicRegressor()
     est.fit(X_train, y_train)
@@ -59,13 +57,13 @@ functionality into a scikit-learn-style API. While there are a lot of
 parameters to tweak, reading the documentation here should make the more
 relevant ones clear for your problem.
 
-``gplearn`` supports regression through the :class:`SymbolicRegressor`, binary
+``gplearn-CUDA`` supports regression through the :class:`SymbolicRegressor`, binary
 classification with the :class:`SymbolicClassifier`, as well as transformation
 for automated feature engineering with the :class:`SymbolicTransformer`, which
 is designed to support regression problems, but should also work for binary
 classification.
 
-``gplearn`` is built on scikit-learn and a fairly recent copy is required
+``gplearn-CUDA`` is built on scikit-learn and a fairly recent copy is required
 for installation. If you come across any issues in running or installing the
 package, `please submit a bug report <https://github.com/trevorstephens/gplearn/issues>`_.
 

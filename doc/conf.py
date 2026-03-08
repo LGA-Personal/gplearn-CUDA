@@ -60,8 +60,8 @@ source_suffix = '.rst'
 master_doc = 'index'
 
 # General information about the project.
-project = u'gplearn'
-copyright = u'2016, Trevor Stephens'
+project = u'gplearn-CUDA'
+copyright = u'2026, Trevor Stephens (Original), LGA-Personal (CUDA)'
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the

@@ -7,6 +7,19 @@ Release History
 Version 0.5.0
 -------------
 
+- **GPU/CUDA Acceleration**: Introduced high-performance GPU-accelerated Genetic 
+  Programming. This project is a CUDA-enabled fork of the original ``gplearn`` 
+  by Trevor Stephens.
+- **Hybrid VM Interpreter**: Implemented a static CUDA C++ Virtual Machine 
+  interpreter that eliminates JIT overhead during evolution, delivering 
+  significant speedups on massive datasets.
+- **Batched Evaluation**: Offloaded entire population evaluation to the GPU 
+  in a single grid launch.
+- **Memory Optimization**: Automated X-matrix transposition for coalesced 
+  memory access on NVIDIA hardware.
+- **Library-wide Support**: GPU acceleration is now available for 
+  ``SymbolicRegressor``, ``SymbolicClassifier`` and ``SymbolicTransformer``.
+- **Dependency Update**: Added optional ``[cuda]`` dependency for ``cupy-cuda12x``.
 
 Version 0.4.3 - 6 Jan 2026
 --------------------------
@@ -74,8 +87,8 @@ Version 0.3.0 - 23 Nov 2017
 
 - Fixed two bugs in :class:`genetic.SymbolicTransformer` where the final
   solution selection logic was incorrect and suboptimal. This fix will change
-  the solutions from all previous versions of `gplearn`. Thanks to
-  `iblasi <https://github.com/iblasi>`_ for diagnosing the problem and helping
+  the solutions from all previous versions of ``gplearn-CUDA`` (and original ``gplearn``). 
+  Thanks to `iblasi <https://github.com/iblasi>`_ for diagnosing the problem and helping
   craft the solution.
 - Fixed bug in :class:`genetic.SymbolicRegressor` where a custom fitness
   measure was defined in :func:`fitness.make_fitness()` with the parameter
