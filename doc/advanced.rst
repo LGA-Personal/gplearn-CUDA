@@ -5,6 +5,44 @@ Advanced Use
 
 .. currentmodule:: gplearn.genetic
 
+.. _gpu_acceleration:
+
+GPU Acceleration Details
+------------------------
+
+For large-scale symbolic regression tasks, ``gplearn`` provides a high-speed
+GPU acceleration path using NVIDIA CUDA. This mode is particularly effective for
+datasets with more than 100,000 samples and large populations (>1,000).
+
+**The VM Architecture**
+
+Unlike standard Python-based execution which relies on recursive tree
+traversal or stack-based loops on the CPU, the CUDA mode utilizes a
+high-performance **Virtual Machine (VM) Interpreter** implemented directly in
+CUDA C++. 
+
+When ``device='cuda'`` is set:
+1. **Compilation**: A static VM kernel is compiled once using NVRTC (NVIDIA 
+   Runtime Compiler).
+2. **Byte-code**: GP programs are converted into a compact postfix "byte-code" 
+   representation on the host.
+3. **Batched Evaluation**: The entire population's byte-code is moved to the GPU
+   once per generation. The VM then interprets thousands of programs 
+   simultaneously across millions of data samples.
+4. **Memory Coalescing**: The input data :math:`X` is automatically transposed 
+   to a feature-major layout on the device, ensuring that memory reads from 
+   GPU warps are perfectly coalesced for maximum hardware throughput.
+
+**Usage Recommendations**
+
+GPU acceleration has some overhead (data movement and kernel launches). To get 
+the most out of your GPU:
+- Use large datasets (>500,000 samples).
+- Use larger populations (>2,000 individuals).
+- Set ``n_jobs=1``. Multiprocessing with CuPy can incur significant IPC 
+  overhead; the GPU's internal parallelism is usually sufficient to saturate 
+  the hardware.
+
 .. _introspection:
 
 Introspecting Programs

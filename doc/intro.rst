@@ -61,6 +61,30 @@ So you're skeptical. I hope so. Read on and discover the ways that the fittest
 programs in the population interact with one another to yield an even better
 generation.
 
+.. _hardware_acceleration:
+
+Hardware Acceleration
+---------------------
+
+Genetic Programming is a "massively parallel" problem. Evaluating a population
+of thousands of programs across large datasets is computationally expensive.
+To address this, ``gplearn`` provides two modes of hardware acceleration:
+
+1. **Multi-core CPU Parallelism**: By setting the ``n_jobs`` parameter, the
+   evolution process can be distributed across all available CPU cores. This
+   is effective for small to medium-sized datasets.
+
+2. **GPU/CUDA Acceleration**: For massive datasets (e.g., >100,000 samples)
+   and large populations, ``gplearn`` can offload program execution and
+   fitness calculation to an NVIDIA GPU using CUDA. This mode utilizes a
+   high-performance virtual machine (VM) interpreter on the GPU to achieve
+   significant speedups.
+
+To enable CUDA acceleration, set the ``device`` parameter to ``'cuda'``::
+
+    from gplearn.genetic import SymbolicRegressor
+    est = SymbolicRegressor(device='cuda')
+
 .. _representation:
 
 Representation

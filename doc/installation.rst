@@ -13,6 +13,11 @@ Now that you have scikit-learn installed, you can install ``gplearn`` using pip:
 
     pip install gplearn
 
+To enable GPU/CUDA acceleration, you should also install the optional ``cuda``
+dependencies (requires an NVIDIA GPU and CUDA drivers)::
+
+    pip install gplearn[cuda]
+
 Or if you wish to install to the home directory::
 
     pip install --user gplearn
