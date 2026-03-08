@@ -1,7 +1,7 @@
-.. image:: https://img.shields.io/pypi/v/gplearn-CUDA.svg
-    :target: https://pypi.python.org/pypi/gplearn-CUDA/
+.. image:: https://img.shields.io/github/v/release/LGA-Personal/gplearn-CUDA.svg
+    :target: https://github.com/LGA-Personal/gplearn-CUDA/releases
     :alt: Version
-.. image:: https://img.shields.io/pypi/l/gplearn-CUDA.svg
+.. image:: https://img.shields.io/github/license/LGA-Personal/gplearn-CUDA.svg
     :target: https://github.com/LGA-Personal/gplearn-CUDA/blob/main/LICENSE
     :alt: License
 .. image:: https://readthedocs.org/projects/gplearn-CUDA/badge/?version=stable

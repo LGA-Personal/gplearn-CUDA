@@ -22,6 +22,7 @@ high-performance **Virtual Machine (VM) Interpreter** implemented directly in
 CUDA C++. 
 
 When ``device='cuda'`` is set:
+
 1. **Compilation**: A static VM kernel is compiled once using NVRTC (NVIDIA 
    Runtime Compiler).
 2. **Byte-code**: GP programs are converted into a compact postfix "byte-code" 
@@ -37,6 +38,7 @@ When ``device='cuda'`` is set:
 
 GPU acceleration has some overhead (data movement and kernel launches). To get 
 the most out of your GPU:
+
 - Use large datasets (>500,000 samples).
 - Use larger populations (>2,000 individuals).
 - Set ``n_jobs=1``. Multiprocessing with CuPy can incur significant IPC 
