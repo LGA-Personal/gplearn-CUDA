@@ -18,6 +18,10 @@ from .functions import _Function
 from .utils import check_random_state, get_xp
 
 
+# Global cache for compiled CUDA kernels to avoid redundant JIT/translation
+_CUDA_KERNEL_CACHE = {}
+
+
 class _Program(object):
 
     """A program-like representation of the evolved program.
@@ -377,6 +381,12 @@ class _Program(object):
         """Translate the prefix program to C++ and JIT-compile a CUDA kernel."""
         import cupy as cp
 
+        # Use the string representation as the cache key
+        cache_key = str(self)
+        if cache_key in _CUDA_KERNEL_CACHE:
+            self._cuda_kernel = _CUDA_KERNEL_CACHE[cache_key]
+            return
+
         # Mapping of gplearn functions to C++ device functions
         cpp_map = {
             'add': '(%s + %s)',
@@ -415,8 +425,9 @@ class _Program(object):
         # JIT-compile using CuPy
         module = cp.RawModule(code=full_source, options=('--std=c++11',))
         self._cuda_kernel = module.get_function('evaluate_program')
+        _CUDA_KERNEL_CACHE[cache_key] = self._cuda_kernel
 
-    def execute(self, X):
+    def execute(self, X, stream=None):
         """Execute the program according to X.
 
         Parameters
@@ -424,6 +435,9 @@ class _Program(object):
         X : {array-like}, shape = [n_samples, n_features]
             Training vectors, where n_samples is the number of samples and
             n_features is the number of features.
+
+        stream : cupy.cuda.Stream, optional (default=None)
+            CUDA stream to use for execution.
 
         Returns
         -------
@@ -443,8 +457,14 @@ class _Program(object):
             # Grid-stride loop configuration
             threads_per_block = 256
             blocks_per_grid = (n_samples + threads_per_block - 1) // threads_per_block
-            self._cuda_kernel((blocks_per_grid,), (threads_per_block,),
-                              (X, y_hats, n_samples, n_features))
+            
+            if stream is not None:
+                with stream:
+                    self._cuda_kernel((blocks_per_grid,), (threads_per_block,),
+                                      (X, y_hats, n_samples, n_features))
+            else:
+                self._cuda_kernel((blocks_per_grid,), (threads_per_block,),
+                                  (X, y_hats, n_samples, n_features))
             return y_hats
 
         # Check for single-node programs
@@ -531,7 +551,7 @@ class _Program(object):
         """Get the indices used to measure the program's fitness."""
         return self.get_all_indices()[0]
 
-    def raw_fitness(self, X, y, sample_weight):
+    def raw_fitness(self, X, y, sample_weight, stream=None):
         """Evaluate the raw fitness of the program according to X, y.
 
         Parameters
@@ -546,13 +566,16 @@ class _Program(object):
         sample_weight : array-like, shape = [n_samples]
             Weights applied to individual samples.
 
+        stream : cupy.cuda.Stream, optional (default=None)
+            CUDA stream to use for execution.
+
         Returns
         -------
         raw_fitness : float
             The raw fitness of the program.
 
         """
-        y_pred = self.execute(X)
+        y_pred = self.execute(X, stream=stream)
         if self.transformer:
             y_pred = self.transformer(y_pred)
         raw_fitness = self.metric(y, y_pred, sample_weight)

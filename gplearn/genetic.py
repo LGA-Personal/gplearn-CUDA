@@ -58,6 +58,10 @@ def _parallel_evolve(n_programs, parents, X, y, sample_weight, seeds, params):
     max_samples = int(max_samples * n_samples)
 
     xp = get_xp() if device == 'cuda' else np
+    stream = None
+    if device == 'cuda':
+        import cupy as cp
+        stream = cp.cuda.Stream()
 
     def _tournament():
         """Find the fittest individual from a sub-population."""
@@ -149,12 +153,15 @@ def _parallel_evolve(n_programs, parents, X, y, sample_weight, seeds, params):
         curr_sample_weight[not_indices] = 0
         oob_sample_weight[indices] = 0
 
-        program.raw_fitness_ = program.raw_fitness(X, y, curr_sample_weight)
+        program.raw_fitness_ = program.raw_fitness(X, y, curr_sample_weight, stream=stream)
         if max_samples < n_samples:
             # Calculate OOB fitness
-            program.oob_fitness_ = program.raw_fitness(X, y, oob_sample_weight)
+            program.oob_fitness_ = program.raw_fitness(X, y, oob_sample_weight, stream=stream)
 
         programs.append(program)
+
+    if stream is not None:
+        stream.synchronize()
 
     return programs
 
@@ -329,6 +336,10 @@ class BaseSymbolic(BaseEstimator, metaclass=ABCMeta):
 
         else:
             X, y = validate_data(self, X, y, y_numeric=True)
+
+        if self.device == 'cuda' and self.n_jobs != 1:
+            warn('GPU acceleration is most efficient with n_jobs=1. '
+                 'Multiprocessing with CuPy can incur significant overhead.')
 
         hall_of_fame = self.hall_of_fame
         if hall_of_fame is None:
