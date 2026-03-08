@@ -351,7 +351,6 @@ class _Program(object):
         self.feature_names = feature_names
         self.device = device
         self.random_state = random_state
-        self._xp = get_xp() if device == 'cuda' else np
         self._cuda_kernel = None
         self.program = program
 
