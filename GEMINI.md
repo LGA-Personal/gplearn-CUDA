@@ -1,0 +1,3 @@
+General Document committed changes in the docs/changes directory.
+
+Notebooklm (MCP/CLI) In our notebooklm we have notebooks that is an expert on both GPlearn and CUDA. If you go to query the Notebooklms and there are permissions issues or similar, then let me know, try to reuthenticate (which will open a window and then I will fill some information in so give it a moment) and if that doesn't work, stop what you're doing and wait for me to fix it.

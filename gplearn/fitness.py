@@ -106,7 +106,15 @@ def make_fitness(*, function, greater_is_better, wrap=True):
 def _weighted_pearson(y, y_pred, w):
     """Calculate the weighted Pearson correlation coefficient."""
     xp = get_xp(y)
-    with xp.errstate(divide='ignore', invalid='ignore'):
+    if hasattr(xp, 'errstate'):
+        with xp.errstate(divide='ignore', invalid='ignore'):
+            y_pred_demean = y_pred - xp.average(y_pred, weights=w)
+            y_demean = y - xp.average(y, weights=w)
+            corr = ((xp.sum(w * y_pred_demean * y_demean) / xp.sum(w)) /
+                    xp.sqrt((xp.sum(w * y_pred_demean ** 2) *
+                             xp.sum(w * y_demean ** 2)) /
+                            (xp.sum(w) ** 2)))
+    else:
         y_pred_demean = y_pred - xp.average(y_pred, weights=w)
         y_demean = y - xp.average(y, weights=w)
         corr = ((xp.sum(w * y_pred_demean * y_demean) / xp.sum(w)) /
