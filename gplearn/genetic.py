@@ -25,7 +25,7 @@ from sklearn.utils.multiclass import check_classification_targets
 from sklearn.utils.multiclass import type_of_target
 from sklearn.utils.validation import validate_data, _check_sample_weight
 
-from ._program import _Program
+from ._program import _Program, _batch_evaluate_gpu
 from .fitness import _fitness_map, _Fitness
 from .functions import _function_map, _Function, sig1 as sigmoid
 from .utils import _partition_estimators
@@ -38,7 +38,14 @@ MAX_INT = np.iinfo(np.int32).max
 
 def _parallel_evolve(n_programs, parents, X, y, sample_weight, seeds, params):
     """Private function used to build a batch of programs within a job."""
-    n_samples, n_features = X.shape
+    device = params['device']
+    n_samples, n_features = 0, 0
+    if X is not None:
+        if device == 'cuda':
+            # Transposed shape: (n_features, n_samples)
+            n_features, n_samples = X.shape
+        else:
+            n_samples, n_features = X.shape
     # Unpack parameters
     tournament_size = params['tournament_size']
     function_set = params['function_set']
@@ -138,6 +145,11 @@ def _parallel_evolve(n_programs, parents, X, y, sample_weight, seeds, params):
                            program=program)
 
         program.parents = genome
+
+        if X is None:
+            # Skip evaluation, will be done in batch
+            programs.append(program)
+            continue
 
         # Draw samples, using sample weights, and then fit
         if sample_weight is None:
@@ -337,6 +349,10 @@ class BaseSymbolic(BaseEstimator, metaclass=ABCMeta):
         else:
             X, y = validate_data(self, X, y, y_numeric=True)
 
+        n_samples, n_features = X.shape
+
+        xp = get_xp() if self.device == 'cuda' else np
+
         if self.device == 'cuda' and self.n_jobs != 1:
             warn('GPU acceleration is most efficient with n_jobs=1. '
                  'Multiprocessing with CuPy can incur significant overhead.')
@@ -457,12 +473,17 @@ class BaseSymbolic(BaseEstimator, metaclass=ABCMeta):
         params['method_probs'] = self._method_probs
         params['device'] = self.device
 
+        X_gpu = X
+        y_gpu = y
+        sample_weight_gpu = sample_weight
+
         if self.device == 'cuda':
             import cupy as cp
-            X = cp.asarray(X, dtype=cp.float32)
-            y = cp.asarray(y, dtype=cp.float32)
+            # Transpose to (n_features, n_samples) for coalesced memory access
+            X_gpu = cp.asarray(X, dtype=cp.float32).T.copy()
+            y_gpu = cp.asarray(y, dtype=cp.float32)
             if sample_weight is not None:
-                sample_weight = cp.asarray(sample_weight, dtype=cp.float32)
+                sample_weight_gpu = cp.asarray(sample_weight, dtype=cp.float32)
 
         if not self.warm_start or not hasattr(self, '_programs'):
             # Free allocated memory, if any
@@ -511,19 +532,67 @@ class BaseSymbolic(BaseEstimator, metaclass=ABCMeta):
                 self.population_size, self.n_jobs)
             seeds = random_state.randint(MAX_INT, size=self.population_size)
 
-            population = Parallel(n_jobs=n_jobs,
-                                  verbose=int(self.verbose > 1))(
-                delayed(_parallel_evolve)(n_programs[i],
-                                          parents,
-                                          X,
-                                          y,
-                                          sample_weight,
-                                          seeds[starts[i]:starts[i + 1]],
-                                          params)
-                for i in range(n_jobs))
+            if self.device == 'cuda':
+                # Batch Evolution for GPU
+                # 1. Perform genetic operations on CPU (fast)
+                # 2. Evaluate entire population in one GPU VM call (very fast)
+                
+                # Perform genetic operations
+                population = Parallel(n_jobs=n_jobs,
+                                      verbose=int(self.verbose > 1))(
+                    delayed(_parallel_evolve)(n_programs[i],
+                                              parents,
+                                              None, # Don't pass X
+                                              None, # Don't pass y
+                                              None, # Don't pass weights
+                                              seeds[starts[i]:starts[i + 1]],
+                                              params)
+                    for i in range(n_jobs))
+                population = list(itertools.chain.from_iterable(population))
 
-            # Reduce, maintaining order across different n_jobs
-            population = list(itertools.chain.from_iterable(population))
+                # Batch Evaluate on GPU
+                # We need to handle sample weights and OOB here.
+                # For simplicity in this optimized path, we evaluate on all samples 
+                # and then compute weighted metrics on the result.
+                y_pred_all = _batch_evaluate_gpu(population, X_gpu, n_samples, n_features)
+                
+                # Compute fitness for each program
+                for i, program in enumerate(population):
+                    y_pred = y_pred_all[i]
+                    if program.transformer:
+                        y_pred = program.transformer(y_pred)
+                    
+                    # Get indices for this program
+                    indices, not_indices = program.get_all_indices(n_samples,
+                                                                   int(self.max_samples * n_samples),
+                                                                   program.random_state)
+                    
+                    # Apply weights
+                    if sample_weight_gpu is None:
+                        w = xp.ones((n_samples,))
+                    else:
+                        w = sample_weight_gpu.copy()
+                    
+                    w_oob = w.copy()
+                    w[not_indices] = 0
+                    w_oob[indices] = 0
+                    
+                    program.raw_fitness_ = self._metric(y_gpu, y_pred, w)
+                    if self.max_samples < 1.0:
+                        program.oob_fitness_ = self._metric(y_gpu, y_pred, w_oob)
+            else:
+                # Standard Parallel Evolution for CPU
+                population = Parallel(n_jobs=n_jobs,
+                                      verbose=int(self.verbose > 1))(
+                    delayed(_parallel_evolve)(n_programs[i],
+                                              parents,
+                                              X_gpu,
+                                              y_gpu,
+                                              sample_weight_gpu,
+                                              seeds[starts[i]:starts[i + 1]],
+                                              params)
+                    for i in range(n_jobs))
+                population = list(itertools.chain.from_iterable(population))
 
             fitness = [program.raw_fitness_ for program in population]
             length = [program.length_ for program in population]

@@ -21,6 +21,176 @@ from .utils import check_random_state, get_xp
 # Global cache for compiled CUDA kernels to avoid redundant JIT/translation
 _CUDA_KERNEL_CACHE = {}
 
+# Opcode mapping for GPU VM
+_OPCODES = {
+    'add': 0, 'sub': 1, 'mul': 2, 'div': 3,
+    'sqrt': 4, 'log': 5, 'abs': 6, 'neg': 7,
+    'inv': 8, 'max': 9, 'min': 10,
+    'sin': 11, 'cos': 12, 'tan': 13, 'sig': 14
+}
+
+_VM_KERNEL_SOURCE = """
+extern "C" {
+    __device__ inline float protected_div(float num, float den) {
+        if (fabsf(den) < 0.001f) return 1.0f;
+        return __fdividef(num, den);
+    }
+    __device__ inline float protected_log(float val) {
+        float abs_val = fabsf(val);
+        if (abs_val < 0.001f) return 0.0f;
+        return __logf(abs_val);
+    }
+    __device__ inline float protected_sqrt(float val) {
+        return __fsqrt_rn(fabsf(val));
+    }
+    __device__ inline float protected_inv(float val) {
+        if (fabsf(val) < 0.001f) return 0.0f;
+        return __frcp_rn(val);
+    }
+    __device__ inline float sigmoid(float x) {
+        return __fdividef(1.0f, (1.0f + __expf(-x)));
+    }
+
+    __global__ void evaluate_population_vm(
+        const int* __restrict__ opcodes, 
+        const float* __restrict__ constants,
+        const float* __restrict__ X,          // (n_features, n_samples)
+        float* __restrict__ y_pred,           // (n_programs, n_samples)
+        const int* __restrict__ prog_offsets, 
+        int n_samples,
+        int n_features) 
+    {
+        int prog_idx = blockIdx.x; 
+        int sample_idx = threadIdx.x + blockIdx.y * blockDim.x;
+
+        if (sample_idx >= n_samples) return;
+
+        int start_op = prog_offsets[prog_idx];
+        int end_op   = prog_offsets[prog_idx + 1];
+
+        float stack[256]; 
+        int sp = 0;
+
+        for (int i = start_op; i < end_op; ++i) {
+            int op = opcodes[i];
+
+            if (op >= 20000) {
+                // Variable
+                int feat_idx = op - 20000;
+                if (feat_idx < n_features && sp < 256) {
+                    stack[sp++] = X[feat_idx * n_samples + sample_idx];
+                }
+            } else if (op >= 10000) {
+                // Constant
+                if (sp < 256) {
+                    stack[sp++] = constants[op - 10000];
+                }
+            } else {
+                // Function
+                if (sp < 1) continue; // Safety
+                float a, b;
+                switch(op) {
+                    case 0: // ADD
+                        if (sp < 2) break; b = stack[--sp]; a = stack[--sp]; stack[sp++] = a + b; break;
+                    case 1: // SUB
+                        if (sp < 2) break; b = stack[--sp]; a = stack[--sp]; stack[sp++] = a - b; break;
+                    case 2: // MUL
+                        if (sp < 2) break; b = stack[--sp]; a = stack[--sp]; stack[sp++] = a * b; break;
+                    case 3: // DIV
+                        if (sp < 2) break; b = stack[--sp]; a = stack[--sp]; stack[sp++] = protected_div(a, b); break;
+                    case 4: // SQRT
+                        a = stack[--sp]; stack[sp++] = protected_sqrt(a); break;
+                    case 5: // LOG
+                        a = stack[--sp]; stack[sp++] = protected_log(a); break;
+                    case 6: // ABS
+                        a = stack[--sp]; stack[sp++] = fabsf(a); break;
+                    case 7: // NEG
+                        a = stack[--sp]; stack[sp++] = -a; break;
+                    case 8: // INV
+                        a = stack[--sp]; stack[sp++] = protected_inv(a); break;
+                    case 9: // MAX
+                        if (sp < 2) break; b = stack[--sp]; a = stack[--sp]; stack[sp++] = fmaxf(a, b); break;
+                    case 10: // MIN
+                        if (sp < 2) break; b = stack[--sp]; a = stack[--sp]; stack[sp++] = fminf(a, b); break;
+                    case 11: // SIN
+                        a = stack[--sp]; stack[sp++] = __sinf(a); break;
+                    case 12: // COS
+                        a = stack[--sp]; stack[sp++] = __cosf(a); break;
+                    case 13: // TAN
+                        a = stack[--sp]; stack[sp++] = __tanf(a); break;
+                    case 14: // SIG
+                        a = stack[--sp]; stack[sp++] = sigmoid(a); break;
+                }
+            }
+        }
+        if (sp > 0) {
+            y_pred[prog_idx * n_samples + sample_idx] = stack[sp - 1];
+        } else {
+            y_pred[prog_idx * n_samples + sample_idx] = 0.0f;
+        }
+    }
+}
+"""
+
+_VM_MODULE = None
+
+
+def _batch_evaluate_gpu(programs, X, n_samples, n_features):
+    """Evaluate a population of programs in one batch using the GPU VM."""
+    import cupy as cp
+    global _VM_MODULE
+    if _VM_MODULE is None:
+        _VM_MODULE = cp.RawModule(code=_VM_KERNEL_SOURCE, options=('-use_fast_math',))
+
+    kernel = _VM_MODULE.get_function('evaluate_population_vm')
+
+    all_opcodes = []
+    offsets = [0]
+    constants_pool = []
+    constants_map = {}
+
+    for prog in programs:
+        postfix = prog.to_postfix()
+        prog_opcodes = []
+        for node in postfix:
+            if isinstance(node, float):
+                # Constant
+                if node not in constants_map:
+                    constants_map[node] = len(constants_pool)
+                    constants_pool.append(node)
+                prog_opcodes.append(10000 + constants_map[node])
+            elif node >= 1000:
+                # Variable
+                prog_opcodes.append(20000 + (node - 1000))
+            else:
+                # Opcode
+                prog_opcodes.append(node)
+        
+        all_opcodes.extend(prog_opcodes)
+        offsets.append(len(all_opcodes))
+
+    # Move to GPU
+    d_opcodes = cp.array(all_opcodes, dtype=cp.int32)
+    d_offsets = cp.array(offsets, dtype=cp.int32)
+    
+    # Handle empty constants pool
+    if not constants_pool:
+        d_constants = cp.zeros(1, dtype=cp.float32)
+    else:
+        d_constants = cp.array(constants_pool, dtype=cp.float32)
+    
+    n_programs = len(programs)
+    y_pred = cp.empty((n_programs, n_samples), dtype=cp.float32)
+
+    # Launch kernel: Grid (n_programs, blocks_per_sample), Block (threads_per_block)
+    threads_per_block = 256
+    blocks_per_sample = (int(n_samples) + threads_per_block - 1) // threads_per_block
+    
+    kernel((n_programs, blocks_per_sample), (threads_per_block,),
+           (d_opcodes, d_constants, X, y_pred, d_offsets, int(n_samples), int(n_features)))
+    
+    return y_pred
+
 
 class _Program(object):
 
@@ -155,6 +325,7 @@ class _Program(object):
         self.transformer = transformer
         self.feature_names = feature_names
         self.device = device
+        self.random_state = random_state
         self._xp = get_xp() if device == 'cuda' else np
         self._cuda_kernel = None
         self.program = program
@@ -331,6 +502,66 @@ class _Program(object):
         # We should never get here
         return None
 
+    def to_postfix(self):
+        """Convert the prefix program to a postfix integer array (Reverse Polish Notation).
+        
+        Returns
+        -------
+        postfix : list of int
+            The postfix representation where:
+            - 0-99: Opcodes for functions
+            - 500-999: Indices for constants (index = op - 500)
+            - 1000+: Indices for features (index = op - 1000)
+        """
+        postfix = []
+        stack = []
+        
+        # Traverse prefix right-to-left to build postfix
+        for node in reversed(self.program):
+            if isinstance(node, _Function):
+                # Function: push to postfix after its arguments are processed
+                # In prefix right-to-left, we see the function AFTER its arguments
+                # But to make it Postfix, the function must come AFTER its arguments.
+                # Standard algorithm: prefix [f, a, b] -> reversed [b, a, f]
+                # Then we just append to postfix as we see them.
+                postfix.append(_OPCODES[node.name])
+            elif isinstance(node, int):
+                # Feature index
+                postfix.append(1000 + node)
+            else:
+                # Constant. We need to find its index in the unique constants of this program.
+                # For simplicity in the batch VM, we will manage a global constant pool.
+                # For now, just mark it as a constant.
+                postfix.append(node) # Placeholder for the actual constant or its index
+
+        # Correct Prefix to Postfix algorithm:
+        # 1. Reverse the prefix expression.
+        # 2. For each element:
+        #    - If it's a terminal, push to a temporary stack.
+        #    - If it's an operator, pop two elements from the stack, 
+        #      form (arg1, arg2, op) and push back to stack.
+        
+        tmp_stack = []
+        for node in reversed(self.program):
+            if not isinstance(node, _Function):
+                # Terminal
+                if isinstance(node, int):
+                    tmp_stack.append([1000 + node])
+                else:
+                    # Constant (float)
+                    tmp_stack.append([node])
+            else:
+                # Operator
+                args = [tmp_stack.pop() for _ in range(node.arity)]
+                # Combine args then the operator
+                new_expr = []
+                for arg in args:
+                    new_expr.extend(arg)
+                new_expr.append(_OPCODES[node.name])
+                tmp_stack.append(new_expr)
+        
+        return tmp_stack[0]
+
     def _depth(self):
         """Calculates the maximum depth of the program tree."""
         terminals = [0]
@@ -413,8 +644,8 @@ class _Program(object):
                 args = [expr_stack.pop() for _ in range(node.arity)]
                 expr_stack.append(cpp_map[node.name] % tuple(args))
             elif isinstance(node, int):
-                # Variable access
-                expr_stack.append('X[tid * n_features + %d]' % node)
+                # Variable access: Coalesced indexing X[feat * n_samples + tid]
+                expr_stack.append('X[%d * n_samples + tid]' % node)
             else:
                 # Constant literal
                 expr_stack.append('%ff' % node)
@@ -447,8 +678,19 @@ class _Program(object):
         """
         if self.device == 'cuda':
             import cupy as cp
-            X = cp.asarray(X, dtype=cp.float32)
-            n_samples, n_features = X.shape
+            # Ensure X is on GPU and in correct shape (n_features, n_samples)
+            if not isinstance(X, cp.ndarray):
+                X = cp.asarray(X, dtype=cp.float32)
+            
+            # If X is (n_samples, n_features), transpose it
+            # In fit(), we already do this, but for predict/transform, 
+            # X might come in standard C-order.
+            if X.shape[1] != 1 and X.ndim == 2 and X.shape[0] != self.n_features:
+                # This is a heuristic check. 
+                # If X is (n_samples, n_features), we transpose.
+                X = X.T.copy()
+            
+            n_features, n_samples = X.shape
             y_hats = cp.empty(n_samples, dtype=cp.float32)
 
             if self._cuda_kernel is None:
