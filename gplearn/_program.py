@@ -153,12 +153,13 @@ def _batch_evaluate_gpu(programs, X, n_samples, n_features):
         postfix = prog.to_postfix()
         prog_opcodes = []
         for node in postfix:
-            if isinstance(node, float):
-                # Constant
-                if node not in constants_map:
-                    constants_map[node] = len(constants_pool)
-                    constants_pool.append(node)
-                prog_opcodes.append(10000 + constants_map[node])
+            if not isinstance(node, (int, np.integer)):
+                # Constant (float or numpy floating)
+                val = float(node)
+                if val not in constants_map:
+                    constants_map[val] = len(constants_pool)
+                    constants_pool.append(val)
+                prog_opcodes.append(10000 + constants_map[val])
             elif node >= 1000:
                 # Variable
                 prog_opcodes.append(20000 + (node - 1000))
@@ -189,7 +190,31 @@ def _batch_evaluate_gpu(programs, X, n_samples, n_features):
     kernel((n_programs, blocks_per_sample), (threads_per_block,),
            (d_opcodes, d_constants, X, y_pred, d_offsets, int(n_samples), int(n_features)))
     
+    # Debug: Check if we are getting non-zero results
+    # print(f"DEBUG: y_pred mean={y_pred.mean()}, std={y_pred.std()}")
+    
     return y_pred
+
+
+def _batch_execute_gpu(programs, X):
+    """Execute a list of programs in one batch on the GPU.
+    
+    Parameters
+    ----------
+    programs : list of _Program
+        The programs to execute.
+    
+    X : cupy.ndarray, shape = (n_features, n_samples)
+        The input data on the GPU.
+        
+    Returns
+    -------
+    y_pred : cupy.ndarray, shape = (n_programs, n_samples)
+        The results of executing each program.
+    """
+    import cupy as cp
+    n_features, n_samples = X.shape
+    return _batch_evaluate_gpu(programs, X, n_samples, n_features)
 
 
 class _Program(object):
@@ -507,52 +532,24 @@ class _Program(object):
         
         Returns
         -------
-        postfix : list of int
+        postfix : list
             The postfix representation where:
-            - 0-99: Opcodes for functions
-            - 500-999: Indices for constants (index = op - 500)
-            - 1000+: Indices for features (index = op - 1000)
+            - int < 1000: Opcodes for functions
+            - int >= 1000: Indices for features (index = op - 1000)
+            - float/np.floating: Constant values
         """
-        postfix = []
-        stack = []
-        
-        # Traverse prefix right-to-left to build postfix
-        for node in reversed(self.program):
-            if isinstance(node, _Function):
-                # Function: push to postfix after its arguments are processed
-                # In prefix right-to-left, we see the function AFTER its arguments
-                # But to make it Postfix, the function must come AFTER its arguments.
-                # Standard algorithm: prefix [f, a, b] -> reversed [b, a, f]
-                # Then we just append to postfix as we see them.
-                postfix.append(_OPCODES[node.name])
-            elif isinstance(node, int):
-                # Feature index
-                postfix.append(1000 + node)
-            else:
-                # Constant. We need to find its index in the unique constants of this program.
-                # For simplicity in the batch VM, we will manage a global constant pool.
-                # For now, just mark it as a constant.
-                postfix.append(node) # Placeholder for the actual constant or its index
-
-        # Correct Prefix to Postfix algorithm:
-        # 1. Reverse the prefix expression.
-        # 2. For each element:
-        #    - If it's a terminal, push to a temporary stack.
-        #    - If it's an operator, pop two elements from the stack, 
-        #      form (arg1, arg2, op) and push back to stack.
-        
         tmp_stack = []
         for node in reversed(self.program):
             if not isinstance(node, _Function):
                 # Terminal
-                if isinstance(node, int):
+                if isinstance(node, (int, np.integer)):
                     tmp_stack.append([1000 + node])
                 else:
-                    # Constant (float)
+                    # Constant (float or numpy floating)
                     tmp_stack.append([node])
             else:
-                # Operator
-                args = [tmp_stack.pop() for _ in range(node.arity)]
+                # Operator: Pop args and reverse them to maintain correct order [arg1, arg2, op]
+                args = [tmp_stack.pop() for _ in range(node.arity)][::-1]
                 # Combine args then the operator
                 new_expr = []
                 for arg in args:

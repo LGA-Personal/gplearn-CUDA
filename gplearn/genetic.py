@@ -25,7 +25,7 @@ from sklearn.utils.multiclass import check_classification_targets
 from sklearn.utils.multiclass import type_of_target
 from sklearn.utils.validation import validate_data, _check_sample_weight
 
-from ._program import _Program, _batch_evaluate_gpu
+from ._program import _Program, _batch_evaluate_gpu, _batch_execute_gpu
 from .fitness import _fitness_map, _Fitness
 from .functions import _function_map, _Function, sig1 as sigmoid
 from .utils import _partition_estimators
@@ -661,17 +661,43 @@ class BaseSymbolic(BaseEstimator, metaclass=ABCMeta):
                 hall_of_fame = fitness.argsort(kind="stable")[::-1][:self.hall_of_fame]
             else:
                 hall_of_fame = fitness.argsort(kind="stable")[:self.hall_of_fame]
-            evaluation = np.array([gp.execute(X) for gp in
-                                   [self._programs[-1][i] for
-                                    i in hall_of_fame]])
-            if self.metric == 'spearman':
-                evaluation = np.apply_along_axis(rankdata, 1, evaluation)
+            
+            if self.device == 'cuda':
+                import cupy as cp
+                # Keep evaluations on GPU for high-speed correlation
+                evaluation = _batch_execute_gpu([self._programs[-1][i] for i in hall_of_fame], X_gpu)
+                
+                if self.metric == 'spearman':
+                    # Spearman on GPU: Rank data then Pearson
+                    # Note: CuPy doesn't have a direct equivalent to rankdata with axis
+                    # but we can implement a basic one or just fallback for spearman.
+                    # For pearson (most common), cp.corrcoef is perfect.
+                    evaluation = evaluation.get() # Fallback for spearman rankdata
+                    evaluation = np.apply_along_axis(rankdata, 1, evaluation)
+                    evaluation = cp.asarray(evaluation)
 
-            with np.errstate(divide='ignore', invalid='ignore'):
-                correlations = np.abs(np.corrcoef(evaluation))
+                # Pearson correlation on GPU
+                correlations = cp.abs(cp.corrcoef(evaluation))
+                correlations = correlations.get() # Move small matrix (e.g. 500x500) back to host
+            else:
+                def _get_eval(gp, X):
+                    res = gp.execute(X)
+                    if hasattr(res, 'get'):
+                        res = res.get()
+                    return res
+
+                evaluation = np.array([_get_eval(gp, X) for gp in
+                                       [self._programs[-1][i] for
+                                        i in hall_of_fame]])
+                if self.metric == 'spearman':
+                    evaluation = np.apply_along_axis(rankdata, 1, evaluation)
+
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    correlations = np.abs(np.corrcoef(evaluation))
+            
             np.fill_diagonal(correlations, 0.)
-            components = list(range(self.hall_of_fame))
-            indices = list(range(self.hall_of_fame))
+            components = list(range(len(hall_of_fame)))
+            indices = list(range(len(hall_of_fame)))
             # Iteratively remove least fit individual of most correlated pair
             while len(components) > self.n_components:
                 most_correlated = np.unravel_index(np.argmax(correlations),
@@ -977,6 +1003,8 @@ class SymbolicRegressor(RegressorMixin, BaseSymbolic):
                              % (self.n_features_in_, n_features))
 
         y = self._program.execute(X)
+        if hasattr(y, 'get'):
+            y = y.get()
 
         return y
 
@@ -1279,7 +1307,10 @@ class SymbolicClassifier(ClassifierMixin, BaseSymbolic):
 
         scores = self._program.execute(X)
         proba = self._transformer(scores)
-        proba = np.vstack([1 - proba, proba]).T
+        xp = get_xp(proba)
+        proba = xp.vstack([1 - proba, proba]).T
+        if hasattr(proba, 'get'):
+            proba = proba.get()
         return proba
 
     def predict(self, X):
@@ -1601,7 +1632,15 @@ class SymbolicTransformer(TransformerMixin, BaseSymbolic):
                              'n_features is %s.'
                              % (self.n_features_in_, n_features))
 
-        X_new = np.array([gp.execute(X) for gp in self._best_programs]).T
+        if self.device == 'cuda':
+            import cupy as cp
+            # Transpose for coalesced access
+            X_gpu = cp.asarray(X, dtype=cp.float32).T.copy()
+            X_new = _batch_execute_gpu(self._best_programs, X_gpu).T
+            if hasattr(X_new, 'get'):
+                X_new = X_new.get()
+        else:
+            X_new = np.array([gp.execute(X) for gp in self._best_programs]).T
 
         return X_new
 
