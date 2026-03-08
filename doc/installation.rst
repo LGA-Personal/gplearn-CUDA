@@ -8,7 +8,8 @@ scipy). So first you will need to `follow their installation instructions <http:
 to get the dependencies.
 
 Option 1: installation using pip
----------------
+--------------------------------
+
 Now that you have scikit-learn installed, you can install ``gplearn-CUDA`` using pip::
 
     pip install gplearn-CUDA
@@ -37,7 +38,8 @@ or::
 and you're done!
 
 Option 2: installation using conda
----------------
+----------------------------------
+
 In case you want to install ``gplearn-CUDA`` in an anaconda environment, you can run::
 
     conda install -c conda-forge gplearn-CUDA
