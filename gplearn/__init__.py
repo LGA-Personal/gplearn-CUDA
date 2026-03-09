@@ -7,3 +7,5 @@ library by Trevor Stephens.
 __version__ = '0.4.3'
 
 __all__ = ['genetic', 'functions', 'fitness']
+
+from ._program import clear_kernel_cache
