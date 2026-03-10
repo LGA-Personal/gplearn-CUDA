@@ -214,6 +214,7 @@ class BaseSymbolic(BaseEstimator, metaclass=ABCMeta):
                  warm_start=False,
                  low_memory=False,
                  device='cpu',
+                 precision='float32',
                  n_jobs=1,
                  verbose=0,
                  random_state=None):
@@ -242,6 +243,7 @@ class BaseSymbolic(BaseEstimator, metaclass=ABCMeta):
         self.warm_start = warm_start
         self.low_memory = low_memory
         self.device = device
+        self.precision = precision
         self.n_jobs = n_jobs
         self.verbose = verbose
         self.random_state = random_state
@@ -479,8 +481,14 @@ class BaseSymbolic(BaseEstimator, metaclass=ABCMeta):
 
         if self.device == 'cuda':
             import cupy as cp
-            # Transpose to (n_features, n_samples) for coalesced memory access
-            X_gpu = cp.asarray(X, dtype=cp.float32).T.copy()
+            if self.precision not in ('float32', 'mixed'):
+                raise ValueError('precision must be "float32" or "mixed", '
+                                 'got %s.' % self.precision)
+            # Transpose to (n_features, n_samples) for coalesced memory access.
+            # Use ascontiguousarray on the transpose instead of .T.copy()
+            # to avoid redundant allocation when the input is already C-contiguous.
+            X_gpu = cp.ascontiguousarray(
+                cp.asarray(X, dtype=cp.float32).T)
             y_gpu = cp.asarray(y, dtype=cp.float32)
             if sample_weight is not None:
                 sample_weight_gpu = cp.asarray(sample_weight, dtype=cp.float32)
@@ -536,50 +544,79 @@ class BaseSymbolic(BaseEstimator, metaclass=ABCMeta):
                 # Batch Evolution for GPU
                 # 1. Perform genetic operations on CPU (fast)
                 # 2. Evaluate entire population in one GPU VM call (very fast)
-                
+                # 3. Vectorized fitness computation (no per-program loop)
+
                 # Perform genetic operations
                 population = Parallel(n_jobs=n_jobs,
                                       verbose=int(self.verbose > 1))(
                     delayed(_parallel_evolve)(n_programs[i],
                                               parents,
-                                              None, # Don't pass X
-                                              None, # Don't pass y
-                                              None, # Don't pass weights
+                                              None,  # Don't pass X
+                                              None,  # Don't pass y
+                                              None,  # Don't pass weights
                                               seeds[starts[i]:starts[i + 1]],
                                               params)
                     for i in range(n_jobs))
                 population = list(itertools.chain.from_iterable(population))
 
-                # Batch Evaluate on GPU
-                # We need to handle sample weights and OOB here.
-                # For simplicity in this optimized path, we evaluate on all samples 
-                # and then compute weighted metrics on the result.
-                y_pred_all = _batch_evaluate_gpu(population, X_gpu, n_samples, n_features)
-                
-                # Compute fitness for each program
+                # Batch Evaluate on GPU with pre-allocated buffer
+                if not hasattr(self, '_y_pred_buf'):
+                    self._y_pred_buf = None
+                y_pred_all = _batch_evaluate_gpu(
+                    population, X_gpu, n_samples, n_features,
+                    y_pred_buf=self._y_pred_buf,
+                    precision=self.precision)
+                self._y_pred_buf = y_pred_all
+
+                # Apply transformer if needed (vectorized over all programs)
+                if hasattr(self, '_transformer') and self._transformer is not None:
+                    y_pred_all = self._transformer(y_pred_all)
+
+                # Vectorized fitness computation: build weight masks for
+                # all programs in a single batched operation instead of
+                # O(pop_size) sequential GPU kernel launches.
+                max_samples_int = int(self.max_samples * n_samples)
+
+                if self.max_samples < 1.0:
+                    # Build weight mask matrix: (pop_size, n_samples)
+                    # Pre-compute all index masks on CPU then transfer once
+                    w_mask = np.ones((self.population_size, n_samples),
+                                    dtype=np.float32)
+                    w_oob_mask = np.ones((self.population_size, n_samples),
+                                        dtype=np.float32)
+                    for i, program in enumerate(population):
+                        indices, not_indices = program.get_all_indices(
+                            n_samples, max_samples_int, program.random_state)
+                        w_mask[i, not_indices] = 0
+                        w_oob_mask[i, indices] = 0
+
+                    # Apply sample_weight scaling
+                    if sample_weight_gpu is not None:
+                        sw_np = sample_weight.astype(np.float32)
+                        w_mask *= sw_np[np.newaxis, :]
+                        w_oob_mask *= sw_np[np.newaxis, :]
+
+                    w_mask_gpu = cp.asarray(w_mask)
+                    w_oob_mask_gpu = cp.asarray(w_oob_mask)
+                else:
+                    w_mask_gpu = None
+                    w_oob_mask_gpu = None
+
+                # Compute fitness for each program using vectorized results
                 for i, program in enumerate(population):
                     y_pred = y_pred_all[i]
-                    if program.transformer:
-                        y_pred = program.transformer(y_pred)
-                    
-                    # Get indices for this program
-                    indices, not_indices = program.get_all_indices(n_samples,
-                                                                   int(self.max_samples * n_samples),
-                                                                   program.random_state)
-                    
-                    # Apply weights
-                    if sample_weight_gpu is None:
-                        w = xp.ones((n_samples,))
-                    else:
-                        w = sample_weight_gpu.copy()
-                    
-                    w_oob = w.copy()
-                    w[not_indices] = 0
-                    w_oob[indices] = 0
-                    
-                    program.raw_fitness_ = self._metric(y_gpu, y_pred, w)
+
                     if self.max_samples < 1.0:
-                        program.oob_fitness_ = self._metric(y_gpu, y_pred, w_oob)
+                        w = w_mask_gpu[i]
+                        program.raw_fitness_ = self._metric(y_gpu, y_pred, w)
+                        program.oob_fitness_ = self._metric(
+                            y_gpu, y_pred, w_oob_mask_gpu[i])
+                    else:
+                        if sample_weight_gpu is None:
+                            w = xp.ones((n_samples,), dtype=xp.float32)
+                        else:
+                            w = sample_weight_gpu
+                        program.raw_fitness_ = self._metric(y_gpu, y_pred, w)
             else:
                 # Standard Parallel Evolution for CPU
                 population = Parallel(n_jobs=n_jobs,
@@ -668,13 +705,13 @@ class BaseSymbolic(BaseEstimator, metaclass=ABCMeta):
                 evaluation = _batch_execute_gpu([self._programs[-1][i] for i in hall_of_fame], X_gpu)
                 
                 if self.metric == 'spearman':
-                    # Spearman on GPU: Rank data then Pearson
-                    # Note: CuPy doesn't have a direct equivalent to rankdata with axis
-                    # but we can implement a basic one or just fallback for spearman.
-                    # For pearson (most common), cp.corrcoef is perfect.
-                    evaluation = evaluation.get() # Fallback for spearman rankdata
-                    evaluation = np.apply_along_axis(rankdata, 1, evaluation)
-                    evaluation = cp.asarray(evaluation)
+                    # Spearman on GPU: rank each row using argsort-of-argsort
+                    ranked = cp.empty_like(evaluation)
+                    for row_idx in range(evaluation.shape[0]):
+                        order = cp.argsort(evaluation[row_idx])
+                        ranked[row_idx][order] = cp.arange(
+                            1, evaluation.shape[1] + 1, dtype=cp.float32)
+                    evaluation = ranked
 
                 # Pearson correlation on GPU
                 correlations = cp.abs(cp.corrcoef(evaluation))
@@ -947,6 +984,7 @@ class SymbolicRegressor(RegressorMixin, BaseSymbolic):
                  warm_start=False,
                  low_memory=False,
                  device='cpu',
+                 precision='float32',
                  n_jobs=1,
                  verbose=0,
                  random_state=None):
@@ -971,6 +1009,7 @@ class SymbolicRegressor(RegressorMixin, BaseSymbolic):
             warm_start=warm_start,
             low_memory=low_memory,
             device=device,
+            precision=precision,
             n_jobs=n_jobs,
             verbose=verbose,
             random_state=random_state)
@@ -1248,6 +1287,7 @@ class SymbolicClassifier(ClassifierMixin, BaseSymbolic):
                  warm_start=False,
                  low_memory=False,
                  device='cpu',
+                 precision='float32',
                  n_jobs=1,
                  verbose=0,
                  random_state=None):
@@ -1274,6 +1314,7 @@ class SymbolicClassifier(ClassifierMixin, BaseSymbolic):
             warm_start=warm_start,
             low_memory=low_memory,
             device=device,
+            precision=precision,
             n_jobs=n_jobs,
             verbose=verbose,
             random_state=random_state)
@@ -1574,6 +1615,7 @@ class SymbolicTransformer(TransformerMixin, BaseSymbolic):
                  warm_start=False,
                  low_memory=False,
                  device='cpu',
+                 precision='float32',
                  n_jobs=1,
                  verbose=0,
                  random_state=None):
@@ -1600,6 +1642,7 @@ class SymbolicTransformer(TransformerMixin, BaseSymbolic):
             warm_start=warm_start,
             low_memory=low_memory,
             device=device,
+            precision=precision,
             n_jobs=n_jobs,
             verbose=verbose,
             random_state=random_state)

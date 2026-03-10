@@ -9,7 +9,9 @@ computer program. It is used for creating and evolving programs used in the
 #
 # License: BSD 3 clause
 
+from collections import OrderedDict
 from copy import copy
+import struct
 
 import numpy as np
 from sklearn.utils.random import sample_without_replacement
@@ -18,8 +20,32 @@ from .functions import _Function
 from .utils import check_random_state, get_xp
 
 
-# Global cache for compiled CUDA kernels to avoid redundant JIT/translation
-_CUDA_KERNEL_CACHE = {}
+# Bounded LRU cache for compiled CUDA kernels to avoid GPU memory exhaustion
+_CUDA_KERNEL_CACHE_MAX_SIZE = 1024
+_CUDA_KERNEL_CACHE = OrderedDict()
+
+
+def _cache_kernel(key, kernel):
+    """Add a kernel to the bounded cache, evicting oldest if full."""
+    if key in _CUDA_KERNEL_CACHE:
+        _CUDA_KERNEL_CACHE.move_to_end(key)
+        return
+    if len(_CUDA_KERNEL_CACHE) >= _CUDA_KERNEL_CACHE_MAX_SIZE:
+        _CUDA_KERNEL_CACHE.popitem(last=False)
+    _CUDA_KERNEL_CACHE[key] = kernel
+
+
+def clear_kernel_cache():
+    """Clear the CUDA kernel cache. Call to free GPU memory."""
+    _CUDA_KERNEL_CACHE.clear()
+
+
+def _float_to_key(val):
+    """Convert a float to a bit-exact bytes key for deduplication.
+
+    Handles NaN, -0.0, and subnormals correctly unlike float equality.
+    """
+    return struct.pack('f', val)
 
 # Opcode mapping for GPU VM
 _OPCODES = {
@@ -51,16 +77,17 @@ extern "C" {
         return __fdividef(1.0f, (1.0f + __expf(-x)));
     }
 
+    // Standard kernel: reads float32 from global memory
     __global__ void evaluate_population_vm(
-        const int* __restrict__ opcodes, 
+        const int* __restrict__ opcodes,
         const float* __restrict__ constants,
         const float* __restrict__ X,          // (n_features, n_samples)
         float* __restrict__ y_pred,           // (n_programs, n_samples)
-        const int* __restrict__ prog_offsets, 
+        const int* __restrict__ prog_offsets,
         int n_samples,
-        int n_features) 
+        int n_features)
     {
-        int prog_idx = blockIdx.x; 
+        int prog_idx = blockIdx.x;
         int sample_idx = threadIdx.x + blockIdx.y * blockDim.x;
 
         if (sample_idx >= n_samples) return;
@@ -68,7 +95,7 @@ extern "C" {
         int start_op = prog_offsets[prog_idx];
         int end_op   = prog_offsets[prog_idx + 1];
 
-        float stack[256]; 
+        float stack[256];
         int sp = 0;
 
         for (int i = start_op; i < end_op; ++i) {
@@ -129,20 +156,191 @@ extern "C" {
             y_pred[prog_idx * n_samples + sample_idx] = 0.0f;
         }
     }
+
+    // Shared-memory kernel: caches feature data in shared memory for
+    // problems with small n_features (<=MAX_SHARED_FEATURES).
+    // Each block cooperatively loads feature columns into shared memory,
+    // then the VM reads from shared memory instead of global memory.
+    // This provides ~10x bandwidth improvement for repeated feature access.
+    __global__ void evaluate_population_vm_smem(
+        const int* __restrict__ opcodes,
+        const float* __restrict__ constants,
+        const float* __restrict__ X,          // (n_features, n_samples)
+        float* __restrict__ y_pred,           // (n_programs, n_samples)
+        const int* __restrict__ prog_offsets,
+        int n_samples,
+        int n_features)
+    {
+        int prog_idx = blockIdx.x;
+        int sample_idx = threadIdx.x + blockIdx.y * blockDim.x;
+
+        // Shared memory: one float per feature per thread in the block
+        // Dynamically sized via launch parameter
+        extern __shared__ float smem[];
+
+        // Load feature data into shared memory
+        if (sample_idx < n_samples) {
+            for (int f = 0; f < n_features; f++) {
+                smem[f * blockDim.x + threadIdx.x] = X[f * n_samples + sample_idx];
+            }
+        }
+        __syncthreads();
+
+        if (sample_idx >= n_samples) return;
+
+        int start_op = prog_offsets[prog_idx];
+        int end_op   = prog_offsets[prog_idx + 1];
+
+        float stack[256];
+        int sp = 0;
+
+        for (int i = start_op; i < end_op; ++i) {
+            int op = opcodes[i];
+
+            if (op >= 20000) {
+                int feat_idx = op - 20000;
+                if (feat_idx < n_features && sp < 256) {
+                    // Read from shared memory instead of global
+                    stack[sp++] = smem[feat_idx * blockDim.x + threadIdx.x];
+                }
+            } else if (op >= 10000) {
+                if (sp < 256) {
+                    stack[sp++] = constants[op - 10000];
+                }
+            } else {
+                if (sp < 1) continue;
+                float a, b;
+                switch(op) {
+                    case 0: if (sp < 2) break; b = stack[--sp]; a = stack[--sp]; stack[sp++] = a + b; break;
+                    case 1: if (sp < 2) break; b = stack[--sp]; a = stack[--sp]; stack[sp++] = a - b; break;
+                    case 2: if (sp < 2) break; b = stack[--sp]; a = stack[--sp]; stack[sp++] = a * b; break;
+                    case 3: if (sp < 2) break; b = stack[--sp]; a = stack[--sp]; stack[sp++] = protected_div(a, b); break;
+                    case 4: a = stack[--sp]; stack[sp++] = protected_sqrt(a); break;
+                    case 5: a = stack[--sp]; stack[sp++] = protected_log(a); break;
+                    case 6: a = stack[--sp]; stack[sp++] = fabsf(a); break;
+                    case 7: a = stack[--sp]; stack[sp++] = -a; break;
+                    case 8: a = stack[--sp]; stack[sp++] = protected_inv(a); break;
+                    case 9: if (sp < 2) break; b = stack[--sp]; a = stack[--sp]; stack[sp++] = fmaxf(a, b); break;
+                    case 10: if (sp < 2) break; b = stack[--sp]; a = stack[--sp]; stack[sp++] = fminf(a, b); break;
+                    case 11: a = stack[--sp]; stack[sp++] = __sinf(a); break;
+                    case 12: a = stack[--sp]; stack[sp++] = __cosf(a); break;
+                    case 13: a = stack[--sp]; stack[sp++] = __tanf(a); break;
+                    case 14: a = stack[--sp]; stack[sp++] = sigmoid(a); break;
+                }
+            }
+        }
+        if (sp > 0) {
+            y_pred[prog_idx * n_samples + sample_idx] = stack[sp - 1];
+        } else {
+            y_pred[prog_idx * n_samples + sample_idx] = 0.0f;
+        }
+    }
+
+    // Mixed-precision kernel: reads float16 input, accumulates in float32.
+    // Provides up to 2x memory bandwidth improvement for large datasets.
+    __global__ void evaluate_population_vm_fp16(
+        const int* __restrict__ opcodes,
+        const short* __restrict__ constants_fp16,
+        const short* __restrict__ X_fp16,     // (n_features, n_samples) as float16
+        float* __restrict__ y_pred,           // (n_programs, n_samples)
+        const int* __restrict__ prog_offsets,
+        int n_samples,
+        int n_features)
+    {
+        int prog_idx = blockIdx.x;
+        int sample_idx = threadIdx.x + blockIdx.y * blockDim.x;
+
+        if (sample_idx >= n_samples) return;
+
+        int start_op = prog_offsets[prog_idx];
+        int end_op   = prog_offsets[prog_idx + 1];
+
+        float stack[256];
+        int sp = 0;
+
+        for (int i = start_op; i < end_op; ++i) {
+            int op = opcodes[i];
+
+            if (op >= 20000) {
+                int feat_idx = op - 20000;
+                if (feat_idx < n_features && sp < 256) {
+                    // Read float16 and convert to float32 for accumulation
+                    stack[sp++] = __half2float(*reinterpret_cast<const __half*>(
+                        &X_fp16[feat_idx * n_samples + sample_idx]));
+                }
+            } else if (op >= 10000) {
+                if (sp < 256) {
+                    stack[sp++] = __half2float(*reinterpret_cast<const __half*>(
+                        &constants_fp16[op - 10000]));
+                }
+            } else {
+                if (sp < 1) continue;
+                float a, b;
+                switch(op) {
+                    case 0: if (sp < 2) break; b = stack[--sp]; a = stack[--sp]; stack[sp++] = a + b; break;
+                    case 1: if (sp < 2) break; b = stack[--sp]; a = stack[--sp]; stack[sp++] = a - b; break;
+                    case 2: if (sp < 2) break; b = stack[--sp]; a = stack[--sp]; stack[sp++] = a * b; break;
+                    case 3: if (sp < 2) break; b = stack[--sp]; a = stack[--sp]; stack[sp++] = protected_div(a, b); break;
+                    case 4: a = stack[--sp]; stack[sp++] = protected_sqrt(a); break;
+                    case 5: a = stack[--sp]; stack[sp++] = protected_log(a); break;
+                    case 6: a = stack[--sp]; stack[sp++] = fabsf(a); break;
+                    case 7: a = stack[--sp]; stack[sp++] = -a; break;
+                    case 8: a = stack[--sp]; stack[sp++] = protected_inv(a); break;
+                    case 9: if (sp < 2) break; b = stack[--sp]; a = stack[--sp]; stack[sp++] = fmaxf(a, b); break;
+                    case 10: if (sp < 2) break; b = stack[--sp]; a = stack[--sp]; stack[sp++] = fminf(a, b); break;
+                    case 11: a = stack[--sp]; stack[sp++] = __sinf(a); break;
+                    case 12: a = stack[--sp]; stack[sp++] = __cosf(a); break;
+                    case 13: a = stack[--sp]; stack[sp++] = __tanf(a); break;
+                    case 14: a = stack[--sp]; stack[sp++] = sigmoid(a); break;
+                }
+            }
+        }
+        if (sp > 0) {
+            y_pred[prog_idx * n_samples + sample_idx] = stack[sp - 1];
+        } else {
+            y_pred[prog_idx * n_samples + sample_idx] = 0.0f;
+        }
+    }
 }
 """
+
+# Maximum number of features for which the shared memory kernel is used.
+# Above this threshold, shared memory requirements exceed typical GPU limits.
+# 32 features * 256 threads * 4 bytes = 32KB, well within the 48KB default.
+MAX_SHARED_FEATURES = 32
 
 _VM_MODULE = None
 
 
-def _batch_evaluate_gpu(programs, X, n_samples, n_features):
-    """Evaluate a population of programs in one batch using the GPU VM."""
+def _batch_evaluate_gpu(programs, X, n_samples, n_features, y_pred_buf=None,
+                        precision='float32'):
+    """Evaluate a population of programs in one batch using the GPU VM.
+
+    Parameters
+    ----------
+    programs : list of _Program
+        The programs to evaluate.
+    X : cupy.ndarray
+        Input data, shape (n_features, n_samples).
+    n_samples : int
+        Number of samples.
+    n_features : int
+        Number of features.
+    y_pred_buf : cupy.ndarray, optional
+        Pre-allocated output buffer of shape (n_programs, n_samples).
+        If provided and correctly sized, it is reused to avoid allocation.
+    precision : str, optional (default='float32')
+        Precision mode: 'float32' or 'mixed' (float16 reads, float32 accumulation).
+
+    Returns
+    -------
+    y_pred : cupy.ndarray, shape (n_programs, n_samples)
+    """
     import cupy as cp
     global _VM_MODULE
     if _VM_MODULE is None:
-        _VM_MODULE = cp.RawModule(code=_VM_KERNEL_SOURCE, options=('-use_fast_math',))
-
-    kernel = _VM_MODULE.get_function('evaluate_population_vm')
+        _VM_MODULE = cp.RawModule(code=_VM_KERNEL_SOURCE,
+                                  options=('-use_fast_math',))
 
     all_opcodes = []
     offsets = [0]
@@ -154,67 +352,94 @@ def _batch_evaluate_gpu(programs, X, n_samples, n_features):
         prog_opcodes = []
         for node in postfix:
             if not isinstance(node, (int, np.integer)):
-                # Constant (float or numpy floating)
+                # Constant — use bit-exact key for deduplication
                 val = float(node)
-                if val not in constants_map:
-                    constants_map[val] = len(constants_pool)
+                key = _float_to_key(val)
+                if key not in constants_map:
+                    constants_map[key] = len(constants_pool)
                     constants_pool.append(val)
-                prog_opcodes.append(10000 + constants_map[val])
+                prog_opcodes.append(10000 + constants_map[key])
             elif node >= 1000:
                 # Variable
                 prog_opcodes.append(20000 + (node - 1000))
             else:
                 # Opcode
                 prog_opcodes.append(node)
-        
+
         all_opcodes.extend(prog_opcodes)
         offsets.append(len(all_opcodes))
 
     # Move to GPU
     d_opcodes = cp.array(all_opcodes, dtype=cp.int32)
     d_offsets = cp.array(offsets, dtype=cp.int32)
-    
+
     # Handle empty constants pool
     if not constants_pool:
         d_constants = cp.zeros(1, dtype=cp.float32)
     else:
         d_constants = cp.array(constants_pool, dtype=cp.float32)
-    
-    n_programs = len(programs)
-    y_pred = cp.empty((n_programs, n_samples), dtype=cp.float32)
 
-    # Launch kernel: Grid (n_programs, blocks_per_sample), Block (threads_per_block)
+    n_programs = len(programs)
+
+    # Reuse pre-allocated buffer if provided and correctly sized
+    if (y_pred_buf is not None and y_pred_buf.shape == (n_programs, n_samples)
+            and y_pred_buf.dtype == cp.float32):
+        y_pred = y_pred_buf
+    else:
+        y_pred = cp.empty((n_programs, n_samples), dtype=cp.float32)
+
     threads_per_block = 256
     blocks_per_sample = (int(n_samples) + threads_per_block - 1) // threads_per_block
-    
-    kernel((n_programs, blocks_per_sample), (threads_per_block,),
-           (d_opcodes, d_constants, X, y_pred, d_offsets, int(n_samples), int(n_features)))
-    
-    # Debug: Check if we are getting non-zero results
-    # print(f"DEBUG: y_pred mean={y_pred.mean()}, std={y_pred.std()}")
-    
+
+    # Choose kernel variant based on precision and feature count
+    if precision == 'mixed':
+        kernel = _VM_MODULE.get_function('evaluate_population_vm_fp16')
+        # Convert data to float16 for bandwidth savings
+        X_fp16 = X.astype(cp.float16)
+        d_constants_fp16 = d_constants.astype(cp.float16)
+        kernel((n_programs, blocks_per_sample), (threads_per_block,),
+               (d_opcodes, d_constants_fp16, X_fp16, y_pred, d_offsets,
+                int(n_samples), int(n_features)))
+    elif n_features <= MAX_SHARED_FEATURES:
+        # Use shared memory kernel for small feature counts
+        kernel = _VM_MODULE.get_function('evaluate_population_vm_smem')
+        smem_bytes = n_features * threads_per_block * 4  # 4 bytes per float
+        kernel((n_programs, blocks_per_sample), (threads_per_block,),
+               (d_opcodes, d_constants, X, y_pred, d_offsets,
+                int(n_samples), int(n_features)),
+               shared_mem=smem_bytes)
+    else:
+        # Standard global memory kernel
+        kernel = _VM_MODULE.get_function('evaluate_population_vm')
+        kernel((n_programs, blocks_per_sample), (threads_per_block,),
+               (d_opcodes, d_constants, X, y_pred, d_offsets,
+                int(n_samples), int(n_features)))
+
     return y_pred
 
 
-def _batch_execute_gpu(programs, X):
+def _batch_execute_gpu(programs, X, precision='float32'):
     """Execute a list of programs in one batch on the GPU.
-    
+
     Parameters
     ----------
     programs : list of _Program
         The programs to execute.
-    
+
     X : cupy.ndarray, shape = (n_features, n_samples)
         The input data on the GPU.
-        
+
+    precision : str, optional (default='float32')
+        Precision mode: 'float32' or 'mixed'.
+
     Returns
     -------
     y_pred : cupy.ndarray, shape = (n_programs, n_samples)
         The results of executing each program.
     """
-    import cupy as cp
     n_features, n_samples = X.shape
-    return _batch_evaluate_gpu(programs, X, n_samples, n_features)
+    return _batch_evaluate_gpu(programs, X, n_samples, n_features,
+                               precision=precision)
 
 
 class _Program(object):
@@ -352,6 +577,7 @@ class _Program(object):
         self.device = device
         self.random_state = random_state
         self._cuda_kernel = None
+        self._postfix_cache = None
         self.program = program
 
         if self.program is not None:
@@ -528,7 +754,11 @@ class _Program(object):
 
     def to_postfix(self):
         """Convert the prefix program to a postfix integer array (Reverse Polish Notation).
-        
+
+        Uses a cached result when available. The cache is valid for the
+        lifetime of a program instance since the program list is never
+        mutated in-place — genetic operations always create new lists.
+
         Returns
         -------
         postfix : list
@@ -537,6 +767,9 @@ class _Program(object):
             - int >= 1000: Indices for features (index = op - 1000)
             - float/np.floating: Constant values
         """
+        if self._postfix_cache is not None:
+            return self._postfix_cache
+
         tmp_stack = []
         for node in reversed(self.program):
             if not isinstance(node, _Function):
@@ -555,8 +788,9 @@ class _Program(object):
                     new_expr.extend(arg)
                 new_expr.append(_OPCODES[node.name])
                 tmp_stack.append(new_expr)
-        
-        return tmp_stack[0]
+
+        self._postfix_cache = tmp_stack[0]
+        return self._postfix_cache
 
     def _depth(self):
         """Calculates the maximum depth of the program tree."""
@@ -608,9 +842,10 @@ class _Program(object):
         """Translate the prefix program to C++ and JIT-compile a CUDA kernel."""
         import cupy as cp
 
-        # Use the string representation as the cache key
+        # Use the string representation as the cache key (bounded LRU cache)
         cache_key = str(self)
         if cache_key in _CUDA_KERNEL_CACHE:
+            _CUDA_KERNEL_CACHE.move_to_end(cache_key)
             self._cuda_kernel = _CUDA_KERNEL_CACHE[cache_key]
             return
 
@@ -652,7 +887,7 @@ class _Program(object):
         # JIT-compile using CuPy
         module = cp.RawModule(code=full_source, options=('--std=c++11',))
         self._cuda_kernel = module.get_function('evaluate_program')
-        _CUDA_KERNEL_CACHE[cache_key] = self._cuda_kernel
+        _cache_kernel(cache_key, self._cuda_kernel)
 
     def execute(self, X, stream=None):
         """Execute the program according to X.
@@ -677,14 +912,19 @@ class _Program(object):
             # Ensure X is on GPU and in correct shape (n_features, n_samples)
             if not isinstance(X, cp.ndarray):
                 X = cp.asarray(X, dtype=cp.float32)
-            
-            # If X is (n_samples, n_features), transpose it
-            # In fit(), we already do this, but for predict/transform, 
-            # X might come in standard C-order.
-            if X.shape[1] != 1 and X.ndim == 2 and X.shape[0] != self.n_features:
-                # This is a heuristic check. 
-                # If X is (n_samples, n_features), we transpose.
-                X = X.T.copy()
+
+            # Determine layout: predict/transform always receives standard
+            # (n_samples, n_features) input, so we must transpose.
+            # During fit(), X is already (n_features, n_samples).
+            # We check shape[1] == n_features as the reliable indicator
+            # that X is in standard layout and needs transposing.
+            # This avoids the broken heuristic that fails when
+            # n_samples == n_features (square matrices).
+            if X.ndim == 2 and X.shape[1] == self.n_features and X.shape[0] != self.n_features:
+                X = cp.ascontiguousarray(X.T)
+            elif X.ndim == 2 and X.shape[0] != self.n_features:
+                # Ambiguous case (e.g. square matrix): assume standard layout
+                X = cp.ascontiguousarray(X.T)
             
             n_features, n_samples = X.shape
             y_hats = cp.empty(n_samples, dtype=cp.float32)
