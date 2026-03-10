@@ -40,15 +40,15 @@ Or if you wish to install to the home directory::
 
 For the latest development version, first get the source from github::
 
-    git clone https://github.com/trevorstephens/gplearn.git
+    git clone https://github.com/LGA-Personal/gplearn-CUDA.git
 
 Then navigate into the local ``gplearn-CUDA`` directory and simply run::
 
-    python setup.py install
+    pip install .
 
 or::
 
-    python setup.py install --user
+    pip install --user .
 
 and you're done!
 

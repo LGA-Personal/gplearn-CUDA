@@ -65,7 +65,7 @@ classification.
 
 ``gplearn-CUDA`` is built on scikit-learn and a fairly recent copy is required
 for installation. If you come across any issues in running or installing the
-package, `please submit a bug report <https://github.com/trevorstephens/gplearn/issues>`_.
+package, `please submit a bug report <https://github.com/LGA-Personal/gplearn-CUDA/issues>`_.
 
 Next up, read some more details about :ref:`what Genetic Programming is <intro>`,
 and how it works...

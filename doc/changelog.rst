@@ -87,7 +87,7 @@ Version 0.3.0 - 23 Nov 2017
 
 - Fixed two bugs in :class:`genetic.SymbolicTransformer` where the final
   solution selection logic was incorrect and suboptimal. This fix will change
-  the solutions from all previous versions of ``gplearn-CUDA`` (and original ``gplearn``). 
+  the solutions from all previous versions of ``gplearn`` (and original ``gplearn``). 
   Thanks to `iblasi <https://github.com/iblasi>`_ for diagnosing the problem and helping
   craft the solution.
 - Fixed bug in :class:`genetic.SymbolicRegressor` where a custom fitness

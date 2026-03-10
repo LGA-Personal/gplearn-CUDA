@@ -206,7 +206,7 @@ html_show_sourcelink = False
 #html_file_suffix = None
 
 # Output file base name for HTML help builder.
-htmlhelp_basename = 'gplearndoc'
+htmlhelp_basename = 'gplearn-cuda-doc'
 
 
 # -- Options for LaTeX output ---------------------------------------------
@@ -226,8 +226,8 @@ latex_elements = {
 # (source start file, target name, title,
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
-  ('index', 'gplearn.tex', u'gplearn Documentation',
-   u'Trevor Stephens', 'manual'),
+  ('index', 'gplearn-cuda.tex', u'gplearn-CUDA Documentation',
+   u'Trevor Stephens, LGA-Personal', 'manual'),
 ]
 
 # The name of an image file (relative to this directory) to place at the top of
@@ -256,8 +256,8 @@ latex_documents = [
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
 man_pages = [
-    ('index', 'gplearn', u'gplearn Documentation',
-     [u'Trevor Stephens'], 1)
+    ('index', 'gplearn-cuda', u'gplearn-CUDA Documentation',
+     [u'Trevor Stephens, LGA-Personal'], 1)
 ]
 
 # If true, show URL addresses after external links.
@@ -270,8 +270,8 @@ man_pages = [
 # (source start file, target name, title, author,
 #  dir menu entry, description, category)
 texinfo_documents = [
-  ('index', 'gplearn', u'gplearn Documentation',
-   u'Trevor Stephens', 'gplearn', 'One line description of project.',
+  ('index', 'gplearn-cuda', u'gplearn-CUDA Documentation',
+   u'Trevor Stephens, LGA-Personal', 'gplearn-cuda', 'GPU-accelerated Genetic Programming in Python.',
    'Miscellaneous'),
 ]
 
