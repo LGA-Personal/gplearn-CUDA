@@ -126,10 +126,29 @@ def _weighted_pearson(y, y_pred, w):
     return 0.
 
 
+def _gpu_rankdata(arr):
+    """Compute ranks on GPU using argsort-of-argsort idiom.
+
+    Equivalent to scipy.stats.rankdata with method='ordinal' converted to
+    float. Stays entirely on GPU — no CPU round-trip.
+    """
+    import cupy as cp
+    order = cp.argsort(arr)
+    ranks = cp.empty_like(order, dtype=cp.float32)
+    ranks[order] = cp.arange(1, len(arr) + 1, dtype=cp.float32)
+    return ranks
+
+
 def _weighted_spearman(y, y_pred, w):
     """Calculate the weighted Spearman correlation coefficient."""
-    y_pred_ranked = np.apply_along_axis(rankdata, 0, y_pred)
-    y_ranked = np.apply_along_axis(rankdata, 0, y)
+    xp = get_xp(y)
+    if xp is not np:
+        # GPU path: rank entirely on GPU
+        y_pred_ranked = _gpu_rankdata(y_pred)
+        y_ranked = _gpu_rankdata(y)
+    else:
+        y_pred_ranked = np.apply_along_axis(rankdata, 0, y_pred)
+        y_ranked = np.apply_along_axis(rankdata, 0, y)
     return _weighted_pearson(y_pred_ranked, y_ranked, w)
 
 
