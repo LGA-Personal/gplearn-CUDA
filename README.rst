@@ -26,9 +26,10 @@ functionality while introducing massive parallelization via NVIDIA CUDA.
 Overview
 --------
 
-While Genetic Programming (GP) can be used to perform a `very wide variety of tasks <http://www.genetic-programming.org/combined.php>`_, gplearn-CUDA is purposefully constrained to solving symbolic regression problems. This is motivated by the scikit-learn ethos, of having powerful estimators that are straight-forward to implement.
+While Genetic Programming (GP) can be used to perform a `very wide variety of tasks <http://www.genetic-programming.org/combined.php>`_, ``gplearn-CUDA`` focuses on three scikit-learn style estimators: symbolic regression, binary classification, and symbolic feature generation.
 
-Symbolic regression is a machine learning technique that aims to identify an underlying mathematical expression that best describes a relationship.
+These map directly to :class:`SymbolicRegressor`, :class:`SymbolicClassifier`,
+and :class:`SymbolicTransformer`.
 
 CUDA Acceleration
 -----------------
@@ -57,6 +58,23 @@ To install the GPU-enabled version via pip (targeting CUDA 12.x by default)::
 
 For other CUDA versions or Conda installation, please see the 
 `Installation Guide <http://gplearn-cuda.readthedocs.io/en/stable/installation.html>`_.
+
+Python Compatibility
+--------------------
+
+``gplearn-CUDA`` currently requires **Python 3.11 or newer** because its core
+dependency ``scikit-learn>=1.8.0`` requires that Python range.
+
+Verified in this repository on Windows:
+
+* CPU path: **Python 3.11, 3.12, 3.13, and 3.14**
+* CUDA path: **Python 3.12 and 3.14**
+
+On some Windows Python 3.14 environments, CuPy can import and JIT kernels
+successfully while optional BLAS backends such as cuBLAS still fail to load.
+When that happens, ``SymbolicTransformer(device='cuda')`` now falls back to a
+NumPy-based correlation step for hall-of-fame selection and emits a warning
+instead of aborting the fit.
 
 License & Credits
 -----------------

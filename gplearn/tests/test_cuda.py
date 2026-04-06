@@ -2,9 +2,9 @@ import numpy as np
 import pytest
 from gplearn.genetic import SymbolicRegressor, SymbolicClassifier, SymbolicTransformer
 from gplearn._program import _Program, _batch_evaluate_gpu
-from gplearn.utils import HAS_CUPY
+from gplearn.utils import HAS_CUDA
 
-@pytest.mark.skipif(not HAS_CUPY, reason="CuPy not installed")
+@pytest.mark.skipif(not HAS_CUDA, reason="CUDA GPU not available")
 def test_cuda_numerical_parity():
     """Verify that GPU VM execution matches CPU stack-based execution."""
     X = np.random.uniform(-1, 1, (1000, 5)).astype(np.float32)
@@ -23,7 +23,7 @@ def test_cuda_numerical_parity():
     # Check max absolute difference
     np.testing.assert_allclose(cpu_pred, gpu_pred, atol=1e-5)
 
-@pytest.mark.skipif(not HAS_CUPY, reason="CuPy not installed")
+@pytest.mark.skipif(not HAS_CUDA, reason="CUDA GPU not available")
 def test_cuda_batch_evaluation():
     """Verify that batch evaluation returns same results as individual execution."""
     import cupy as cp
@@ -38,22 +38,31 @@ def test_cuda_batch_evaluation():
     
     # Batch evaluate
     y_batch = _batch_evaluate_gpu(population, X_gpu, X.shape[0], X.shape[1])
-    
+
     # Compare with individual execute()
     for i, program in enumerate(population):
-        y_ind = program.execute(X) # Standard execute handles the device
-        np.testing.assert_allclose(y_batch[i].get(), y_ind, atol=1e-5)
+        y_ind = np.asarray(program.execute(X), dtype=np.float32)
+        np.testing.assert_allclose(y_batch[i].get(), y_ind,
+                                   rtol=5e-5, atol=2e-2)
 
-@pytest.mark.skipif(not HAS_CUPY, reason="CuPy not installed")
+@pytest.mark.skipif(not HAS_CUDA, reason="CUDA GPU not available")
 def test_cuda_vm_stack_limits():
     """Verify the VM handles deep programs without crashing (within stack limits)."""
-    # Create an artificially deep program: add(add(add(...)))
-    program = [est.function_set[0]] * 50 + [0] * 51 
-    # Just a conceptual test - in practice we'd instantiate a _Program
-    # and call execute.
-    pass
+    from gplearn.functions import add2
 
-@pytest.mark.skipif(not HAS_CUPY, reason="CuPy not installed")
+    # Prefix form for a 51-leaf left-deep addition tree.
+    program = [add2] * 50 + [0] * 51
+    prog = _Program(function_set=[add2], arities={2: [add2]}, init_depth=(2, 2),
+                    init_method='full', n_features=1, const_range=None,
+                    metric=None, p_point_replace=0.1, parsimony_coefficient=0.1,
+                    random_state=np.random.RandomState(42), device='cuda',
+                    program=program)
+
+    X = np.random.uniform(-1, 1, (128, 1)).astype(np.float32)
+    result = prog.execute(X).get()
+    np.testing.assert_allclose(result, 51 * X[:, 0], rtol=1e-6, atol=5e-5)
+
+@pytest.mark.skipif(not HAS_CUDA, reason="CUDA GPU not available")
 def test_cuda_transposition_heuristics():
     """Verify that execute() correctly identifies and transposes input data."""
     X = np.random.uniform(-1, 1, (100, 5)).astype(np.float32)

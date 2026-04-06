@@ -39,7 +39,8 @@ MAX_INT = np.iinfo(np.int32).max
 def _parallel_evolve(n_programs, parents, X, y, sample_weight, seeds, params):
     """Private function used to build a batch of programs within a job."""
     device = params['device']
-    n_samples, n_features = 0, 0
+    n_samples = params.get('n_samples', 0)
+    n_features = params.get('n_features', 0)
     if X is not None:
         if device == 'cuda':
             # Transposed shape: (n_features, n_samples)
@@ -474,6 +475,8 @@ class BaseSymbolic(BaseEstimator, metaclass=ABCMeta):
         params['arities'] = self._arities
         params['method_probs'] = self._method_probs
         params['device'] = self.device
+        params['n_samples'] = n_samples
+        params['n_features'] = n_features
 
         X_gpu = X
         y_gpu = y
@@ -713,9 +716,15 @@ class BaseSymbolic(BaseEstimator, metaclass=ABCMeta):
                             1, evaluation.shape[1] + 1, dtype=cp.float32)
                     evaluation = ranked
 
-                # Pearson correlation on GPU
-                correlations = cp.abs(cp.corrcoef(evaluation))
-                correlations = correlations.get() # Move small matrix (e.g. 500x500) back to host
+                # Pearson correlation on GPU, with a host fallback for
+                # environments where CuPy imports but BLAS DLLs are absent.
+                try:
+                    correlations = cp.abs(cp.corrcoef(evaluation))
+                    correlations = correlations.get()
+                except (ImportError, OSError) as exc:
+                    warn('Falling back to NumPy correlation because the '
+                         f'CuPy linear algebra backend is unavailable: {exc}')
+                    correlations = np.abs(np.corrcoef(cp.asnumpy(evaluation)))
             else:
                 def _get_eval(gp, X):
                     res = gp.execute(X)

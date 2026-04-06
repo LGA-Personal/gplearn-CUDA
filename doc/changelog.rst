@@ -20,6 +20,15 @@ Version 0.4.3-CUDA
 - **Library-wide Support**: GPU acceleration is now available for 
   ``SymbolicRegressor``, ``SymbolicClassifier`` and ``SymbolicTransformer``.
 - **Dependency Update**: Added optional ``[cuda]`` dependency for ``cupy-cuda12x``.
+- **CUDA Reliability**: Fixed NVRTC compilation of the shared VM module by
+  including the CUDA half-precision header needed by the mixed-precision kernel.
+- **GPU Evolution Fix**: Preserved feature-count metadata during batched GPU
+  population generation so GPU-only program construction remains valid.
+- **Transformer Fallback**: ``SymbolicTransformer(device='cuda')`` now falls
+  back to a NumPy correlation step when CuPy's BLAS backends are unavailable,
+  which is especially relevant for some Windows Python 3.14 environments.
+- **Compatibility Documentation**: Documented Python 3.11+ support and the
+  currently verified Windows CPU/CUDA version matrix in the user docs.
 
 Version 0.4.3 - 6 Jan 2026
 --------------------------

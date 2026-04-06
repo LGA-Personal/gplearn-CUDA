@@ -37,15 +37,15 @@ Introduction to GP
 .. currentmodule:: gplearn.genetic
 
 ``gplearn-CUDA`` extends the `scikit-learn <http://scikit-learn.org>`_ machine
-learning library to perform Genetic Programming (GP) with symbolic regression.
+learning library to perform Genetic Programming (GP) for symbolic regression,
+binary classification, and symbolic feature generation.
 
-Symbolic regression is a machine learning technique that aims to identify an
-underlying mathematical expression that best describes a relationship. It
-begins by building a population of naive random formulas to represent a
-relationship between known independent variables and their dependent variable
-targets in order to predict new data. Each successive generation of programs
-is then evolved from the one that came before it by selecting the fittest
-individuals from the population to undergo genetic operations.
+The core workflow is the same across the supported estimators: build a
+population of naive random formulas, evaluate them against a target, and
+evolve successive generations by selecting the fittest programs to undergo
+genetic operations. In regression this seeks a direct numeric relationship,
+in classification it seeks a decision function, and in transformation it seeks
+useful derived features for downstream models.
 
 Genetic programming is capable of taking a series of totally random programs,
 untrained and unaware of any given target function you might have had in mind,
@@ -84,6 +84,11 @@ To enable CUDA acceleration, set the ``device`` parameter to ``'cuda'``::
 
     from gplearn.genetic import SymbolicRegressor
     est = SymbolicRegressor(device='cuda')
+
+On some Windows Python 3.14 environments, CuPy can import and compile kernels
+while optional BLAS backends are unavailable. In that case,
+``SymbolicTransformer(device='cuda')`` falls back to a NumPy correlation step
+for hall-of-fame selection and emits a warning instead of failing the fit.
 
 .. _representation:
 

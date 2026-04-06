@@ -616,6 +616,26 @@ class TestTransformerSpearmanGPU:
         X_new = est.transform(X)
         assert X_new.shape == (100, 3)
 
+    @pytest.mark.skipif(not HAS_CUDA, reason="CUDA GPU not available")
+    def test_transformer_corrcoef_host_fallback(self, monkeypatch):
+        """Transformer survives missing CuPy BLAS backends by falling back."""
+        import cupy as cp
+
+        X = diabetes.data[:100].astype(np.float32)
+        y = diabetes.target[:100].astype(np.float32)
+        est = SymbolicTransformer(
+            population_size=30, generations=1, random_state=42,
+            metric='spearman', hall_of_fame=10, n_components=3,
+            device='cuda')
+
+        def _broken_corrcoef(*args, **kwargs):
+            raise ImportError('mock missing cublas backend')
+
+        monkeypatch.setattr(cp, 'corrcoef', _broken_corrcoef)
+        est.fit(X, y)
+        X_new = est.transform(X)
+        assert X_new.shape == (100, 3)
+
 
 # =========================================================================
 # Integration: Classifier with GPU precision

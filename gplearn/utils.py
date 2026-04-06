@@ -13,8 +13,34 @@ try:
     import cupy as cp
     HAS_CUPY = True
 except ImportError:
+    cp = None
     HAS_CUPY = False
 from joblib import cpu_count
+
+
+def _has_cuda_runtime():
+    """Return True when CuPy can see at least one CUDA device."""
+    if not HAS_CUPY:
+        return False
+    try:
+        return cp.cuda.runtime.getDeviceCount() > 0
+    except Exception:
+        return False
+
+
+def _has_cupy_backend(name):
+    """Return True when a CuPy backend DLL can be imported."""
+    if not HAS_CUPY:
+        return False
+    try:
+        __import__(f'cupy_backends.cuda.libs.{name}')
+        return True
+    except Exception:
+        return False
+
+
+HAS_CUDA = _has_cuda_runtime()
+HAS_CUBLAS = _has_cupy_backend('cublas')
 
 
 def get_xp(x=None):

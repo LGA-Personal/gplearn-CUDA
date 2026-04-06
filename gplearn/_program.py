@@ -56,6 +56,8 @@ _OPCODES = {
 }
 
 _VM_KERNEL_SOURCE = """
+#include <cuda_fp16.h>
+
 extern "C" {
     __device__ inline float protected_div(float num, float den) {
         if (fabsf(den) < 0.001f) return 1.0f;
@@ -780,8 +782,9 @@ class _Program(object):
                     # Constant (float or numpy floating)
                     tmp_stack.append([node])
             else:
-                # Operator: Pop args and reverse them to maintain correct order [arg1, arg2, op]
-                args = [tmp_stack.pop() for _ in range(node.arity)][::-1]
+                # Operator: Pop args in prefix order so non-commutative
+                # operators like sub/div preserve operand ordering.
+                args = [tmp_stack.pop() for _ in range(node.arity)]
                 # Combine args then the operator
                 new_expr = []
                 for arg in args:

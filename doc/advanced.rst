@@ -10,7 +10,7 @@ Advanced Use
 GPU Acceleration Details
 ------------------------
 
-For large-scale symbolic regression tasks, ``gplearn-CUDA`` provides a high-speed
+For large-scale GP tasks, ``gplearn-CUDA`` provides a high-speed
 GPU acceleration path using NVIDIA CUDA. This mode is particularly effective for
 datasets with more than 100,000 samples and large populations (>1,000).
 
@@ -33,6 +33,11 @@ When ``device='cuda'`` is set:
 4. **Memory Coalescing**: The input data :math:`X` is automatically transposed 
    to a feature-major layout on the device, ensuring that memory reads from 
    GPU warps are perfectly coalesced for maximum hardware throughput.
+
+For :class:`SymbolicTransformer`, the final hall-of-fame correlation step is
+normally computed with CuPy on the GPU. If a Windows environment can compile
+CUDA kernels but lacks optional BLAS backends such as cuBLAS, this step falls
+back to NumPy on the host and emits a warning instead of aborting the fit.
 
 **Usage Recommendations**
 

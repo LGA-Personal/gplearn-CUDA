@@ -12,9 +12,12 @@ High-Performance Examples
 
 Detailed examples for CUDA acceleration can be found in the repository:
 
-*   **CUDA Tutorial**: ``examples/cuda_tutorial.py`` 
-    A step-by-step guide to using ``SymbolicRegressor`` and 
-    ``SymbolicTransformer`` with GPU acceleration.
+*   **Regressor Tutorial**: ``examples/regressor_cuda.py``
+    A step-by-step GPU example using ``SymbolicRegressor``.
+*   **Classifier Tutorial**: ``examples/classifier_cuda.py``
+    A GPU example using ``SymbolicClassifier``.
+*   **Transformer Tutorial**: ``examples/transformer_cuda.py``
+    A GPU example using ``SymbolicTransformer`` for feature generation.
 *   **Benchmark Suite**: ``examples/benchmark.py``
     A comprehensive performance comparison between multi-core CPU and GPU runs 
     across various dataset scales.

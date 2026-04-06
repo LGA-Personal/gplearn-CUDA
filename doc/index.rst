@@ -34,13 +34,11 @@ a `scikit-learn <http://scikit-learn.org>`_ inspired and compatible API.
 **library developed by Trevor Stephens.** It maintains all the original 
 functionality while introducing massive parallelization via NVIDIA CUDA.
 
-Symbolic regression is a machine learning technique that aims to identify an
-underlying mathematical expression that best describes a relationship. It
-begins by building a population of naive random formulas to represent a
-relationship between known independent variables and their dependent variable
-targets in order to predict new data. Each successive generation of programs is
-then evolved from the one that came before it by selecting the fittest
-individuals from the population to undergo genetic operations.
+``gplearn-CUDA`` supports regression through the :class:`SymbolicRegressor`,
+binary classification with the :class:`SymbolicClassifier`, and automated
+feature engineering with the :class:`SymbolicTransformer`. All three share the
+same GP evolution engine while keeping the familiar scikit-learn estimator
+workflow.
 
 ``gplearn-CUDA`` retains the familiar scikit-learn ``fit``/``predict`` API and
 works with the existing scikit-learn `pipeline <https://scikit-learn.org/stable/modules/compose.html>`_
@@ -56,12 +54,6 @@ can be tailored to your problem. The package attempts to squeeze a lot of
 functionality into a scikit-learn-style API. While there are a lot of
 parameters to tweak, reading the documentation here should make the more
 relevant ones clear for your problem.
-
-``gplearn-CUDA`` supports regression through the :class:`SymbolicRegressor`, binary
-classification with the :class:`SymbolicClassifier`, as well as transformation
-for automated feature engineering with the :class:`SymbolicTransformer`, which
-is designed to support regression problems, but should also work for binary
-classification.
 
 ``gplearn-CUDA`` is built on scikit-learn and a fairly recent copy is required
 for installation. If you come across any issues in running or installing the
