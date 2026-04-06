@@ -36,6 +36,12 @@ license-files = ["LICENSE"]
 cuda = [
     "cupy-cuda13x[ctk]>=13.0.0"
 ]
+cuda13 = [
+    "cupy-cuda13x[ctk]>=13.0.0"
+]
+cuda12 = [
+    "cupy-cuda12x[ctk]>=13.0.0"
+]
 
 [project.urls]
 homepage = "https://github.com/LGA-Personal/gplearn-CUDA"
