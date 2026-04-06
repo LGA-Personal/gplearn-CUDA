@@ -52,7 +52,8 @@ Installation
 ``gplearn-CUDA`` requires a recent version of scikit-learn. The CUDA acceleration 
 is compatible with **CUDA 11.2 through 13.x**.
 
-To install the GPU-enabled version via pip (targeting CUDA 13.x by default)::
+To install the GPU-enabled version via pip (targeting CUDA 13.x by default,
+including the required CUDA toolkit runtime libraries)::
 
     pip install gplearn-CUDA[cuda]
 

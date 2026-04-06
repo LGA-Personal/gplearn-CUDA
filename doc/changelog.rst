@@ -4,7 +4,7 @@
 Release History
 ===============
 
-Version 0.4.4 - 6 Apr 2026
+Version 0.4.5 - 6 Apr 2026
 --------------------------
 
 - **GPU/CUDA Acceleration**: Introduced high-performance GPU-accelerated Genetic 
@@ -20,7 +20,8 @@ Version 0.4.4 - 6 Apr 2026
 - **Library-wide Support**: GPU acceleration is now available for 
   ``SymbolicRegressor``, ``SymbolicClassifier`` and ``SymbolicTransformer``.
 - **Dependency Update**: The optional ``[cuda]`` dependency now installs
-  ``cupy-cuda13x`` by default.
+  ``cupy-cuda13x[ctk]`` by default so common CUDA runtime libraries are pulled
+  in automatically for pip-based installs.
 - **CUDA Reliability**: Fixed NVRTC compilation of the shared VM module by
   including the CUDA half-precision header needed by the mixed-precision kernel.
 - **GPU Evolution Fix**: Preserved feature-count metadata during batched GPU
