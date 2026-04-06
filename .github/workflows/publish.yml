@@ -27,10 +27,14 @@ jobs:
         python -m
         pip install
         build
+        twine
         --user
 
     - name: Build a binary wheel and a source tarball
       run: python -m build
+
+    - name: Check distribution metadata
+      run: python -m twine check dist/*
 
     - name: Publish package distributions to PyPI
       uses: pypa/gh-action-pypi-publish@release/v1

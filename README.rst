@@ -28,8 +28,8 @@ Overview
 
 While Genetic Programming (GP) can be used to perform a `very wide variety of tasks <http://www.genetic-programming.org/combined.php>`_, ``gplearn-CUDA`` focuses on three scikit-learn style estimators: symbolic regression, binary classification, and symbolic feature generation.
 
-These map directly to :class:`SymbolicRegressor`, :class:`SymbolicClassifier`,
-and :class:`SymbolicTransformer`.
+These map directly to ``SymbolicRegressor``, ``SymbolicClassifier``, and
+``SymbolicTransformer``.
 
 CUDA Acceleration
 -----------------
