@@ -28,8 +28,8 @@ Overview
 
 While Genetic Programming (GP) can be used to perform a `very wide variety of tasks <http://www.genetic-programming.org/combined.php>`_, ``gplearn-CUDA`` focuses on three scikit-learn style estimators: symbolic regression, binary classification, and symbolic feature generation.
 
-These map directly to :class:`SymbolicRegressor`, :class:`SymbolicClassifier`,
-and :class:`SymbolicTransformer`.
+These map directly to ``SymbolicRegressor``, ``SymbolicClassifier``, and
+``SymbolicTransformer``.
 
 CUDA Acceleration
 -----------------
@@ -52,7 +52,7 @@ Installation
 ``gplearn-CUDA`` requires a recent version of scikit-learn. The CUDA acceleration 
 is compatible with **CUDA 11.2 through 13.x**.
 
-To install the GPU-enabled version via pip (targeting CUDA 12.x by default)::
+To install the GPU-enabled version via pip (targeting CUDA 13.x by default)::
 
     pip install gplearn-CUDA[cuda]
 

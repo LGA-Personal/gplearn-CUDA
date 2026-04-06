@@ -34,7 +34,7 @@ license-files = ["LICENSE"]
 
 [project.optional-dependencies]
 cuda = [
-    "cupy-cuda12x>=13.0.0"
+    "cupy-cuda13x>=13.0.0"
 ]
 
 [project.urls]

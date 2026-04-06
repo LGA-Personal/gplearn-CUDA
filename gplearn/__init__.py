@@ -4,7 +4,7 @@ This project is a high-performance CUDA extension of the original ``gplearn``
 library by Trevor Stephens.
 
 """
-__version__ = '0.4.3'
+__version__ = '0.4.4'
 
 __all__ = ['genetic', 'functions', 'fitness']
 

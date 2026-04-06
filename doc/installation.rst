@@ -19,7 +19,7 @@ Now that you have scikit-learn installed, you can install ``gplearn-CUDA`` using
 
 To enable GPU/CUDA acceleration, you should also install the optional ``cuda``
 dependencies. ``gplearn-CUDA`` is compatible with **CUDA 11.2 through 13.x**.
-The package extra currently installs the CuPy build for **CUDA 12.x** by
+The package extra currently installs the CuPy build for **CUDA 13.x** by
 default::
 
     pip install "gplearn-CUDA[cuda]"
@@ -42,7 +42,7 @@ Then::
 If you have an NVIDIA driver but do not have the CUDA Toolkit installed, you 
 can install a standalone environment via pip::
 
-    pip install "cupy-cuda12x[ctk]"
+    pip install "cupy-cuda13x[ctk]"
 
 Or if you wish to install to the home directory::
 
